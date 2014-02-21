@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre - 2014-02-18
+	Ractive - v0.4.0-pre - 2014-02-21
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -7503,7 +7503,6 @@
 					}
 				}
 			}
-			runloop.end();
 			upstreamQueue = [];
 			keys = keypath.split( '.' );
 			while ( keys.length ) {
@@ -7514,6 +7513,7 @@
 			if ( oldArray.length !== newArray.length ) {
 				notifyDependants( this, keypath + '.length', true );
 			}
+			runloop.end();
 			transitionManager.init();
 		};
 
