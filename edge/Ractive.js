@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre - 2014-02-21
+	Ractive - v0.4.0-pre - 2014-02-22
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -2861,6 +2861,7 @@
 			parentFragment = fragment.parent = fragment.owner.parentFragment;
 			fragment.root = options.root;
 			fragment.pNode = options.pNode;
+			fragment.pElement = options.pElement;
 			fragment.context = options.context;
 			if ( fragment.owner.type === types.SECTION ) {
 				fragment.index = options.index;
@@ -2886,6 +2887,7 @@
 			for ( i = 0; i < numItems; i += 1 ) {
 				fragment.items[ fragment.items.length ] = fragment.createItem( {
 					parentFragment: fragment,
+					pElement: options.pElement,
 					descriptor: options.descriptor[ i ],
 					index: i
 				} );
@@ -3728,6 +3730,7 @@
 				descriptor: section.descriptor.f,
 				root: section.root,
 				pNode: section.parentFragment.pNode,
+				pElement: section.parentFragment.pElement,
 				owner: section
 			};
 			if ( section.descriptor.n ) {
@@ -4199,22 +4202,39 @@
 		};
 	}( config_namespaces );
 
+	var render_DomFragment_Attribute_helpers_getInterpolator = function( types ) {
+
+		return function getInterpolator( attribute ) {
+			var items, item;
+			items = attribute.fragment.items;
+			if ( items.length !== 1 ) {
+				return;
+			}
+			item = items[ 0 ];
+			if ( item.type !== types.INTERPOLATOR || !item.keypath && !item.ref ) {
+				return;
+			}
+			return item;
+		};
+	}( config_types );
+
 	var render_DomFragment_Attribute_prototype_bind = function( runloop, types, warn, arrayContentsMatch, getValueFromCheckboxes, get, set ) {
 
 		var singleMustacheError = 'For two-way binding to work, attribute value must be a single interpolator (e.g. value="{{foo}}")',
 			expressionError = 'You cannot set up two-way binding against an expression ',
-			bindAttribute, getInterpolator, updateModel, update, getBinding, inheritProperties, MultipleSelectBinding, SelectBinding, RadioNameBinding, CheckboxNameBinding, CheckedBinding, FileListBinding, ContentEditableBinding, GenericBinding;
+			bindAttribute, updateModel, update, getBinding, inheritProperties, MultipleSelectBinding, SelectBinding, RadioNameBinding, CheckboxNameBinding, CheckedBinding, FileListBinding, ContentEditableBinding, GenericBinding;
 		bindAttribute = function() {
 			var node = this.pNode,
 				interpolator, binding, bindings;
-			if ( !this.fragment ) {
-				return false;
-			}
-			interpolator = getInterpolator( this );
+			interpolator = this.interpolator;
 			if ( !interpolator ) {
+				warn( singleMustacheError );
 				return false;
 			}
-			this.interpolator = interpolator;
+			if ( interpolator.keypath && interpolator.keypath.substr === '${' ) {
+				warn( expressionError + interpolator.keypath );
+				return false;
+			}
 			if ( !interpolator.keypath ) {
 				interpolator.resolve( interpolator.descriptor.r );
 			}
@@ -4236,22 +4256,6 @@
 			var value = get( this._ractive.root, this._ractive.binding.keypath );
 			this.value = value == undefined ? '' : value;
 		};
-		getInterpolator = function( attribute ) {
-			var item = attribute.fragment.items[ 0 ];
-			if ( attribute.fragment.items.length !== 1 || item.type !== types.INTERPOLATOR || !item.keypath && !item.ref ) {
-				if ( attribute.root.debug ) {
-					warn( singleMustacheError );
-				}
-				return null;
-			}
-			if ( item.keypath && item.keypath.substr( 0, 2 ) === '${' ) {
-				if ( attribute.root.debug ) {
-					warn( expressionError + item.keypath );
-				}
-				return null;
-			}
-			return item;
-		};
 		getBinding = function( attribute ) {
 			var node = attribute.pNode;
 			if ( node.tagName === 'SELECT' ) {
@@ -4272,7 +4276,7 @@
 				return null;
 			}
 			if ( attribute.lcName !== 'value' ) {
-				warn( 'This is... odd' );
+				throw new Error( 'Attempted to set up an illegal two-way binding. This error is unexpected - if you can, please file an issue at https://github.com/RactiveJS/Ractive, or contact @RactiveJS on Twitter. Thanks!' );
 			}
 			if ( node.type === 'file' ) {
 				return new FileListBinding( attribute, node );
@@ -5247,7 +5251,7 @@
 		return StringFragment;
 	}( config_types, utils_parseJSON, render_shared_initFragment, render_StringFragment_Interpolator, render_StringFragment_Section, render_StringFragment_Text, render_StringFragment_prototype_toArgsList, circular );
 
-	var render_DomFragment_Attribute__Attribute = function( runloop, types, determineNameAndNamespace, setStaticAttribute, determinePropertyName, bind, update, StringFragment ) {
+	var render_DomFragment_Attribute__Attribute = function( runloop, types, determineNameAndNamespace, setStaticAttribute, determinePropertyName, getInterpolator, bind, update, StringFragment ) {
 
 		var DomAttribute = function( options ) {
 			this.type = types.ATTRIBUTE;
@@ -5265,6 +5269,7 @@
 				root: this.root,
 				owner: this
 			} );
+			this.interpolator = getInterpolator( this );
 			if ( !this.pNode ) {
 				return;
 			}
@@ -5308,9 +5313,15 @@
 				}
 			},
 			toString: function() {
-				var str;
+				var str, interpolator;
 				if ( this.value === null ) {
 					return this.name;
+				}
+				if ( this.name === 'value' && this.element.lcName === 'select' ) {
+					return;
+				}
+				if ( this.name === 'name' && this.element.lcName === 'input' && ( interpolator = this.interpolator ) ) {
+					return 'name={{' + ( interpolator.keypath || interpolator.ref ) + '}}';
 				}
 				if ( !this.fragment ) {
 					return this.name + '=' + JSON.stringify( this.value );
@@ -5320,7 +5331,7 @@
 			}
 		};
 		return DomAttribute;
-	}( global_runloop, config_types, render_DomFragment_Attribute_helpers_determineNameAndNamespace, render_DomFragment_Attribute_helpers_setStaticAttribute, render_DomFragment_Attribute_helpers_determinePropertyName, render_DomFragment_Attribute_prototype_bind, render_DomFragment_Attribute_prototype_update, render_StringFragment__StringFragment );
+	}( global_runloop, config_types, render_DomFragment_Attribute_helpers_determineNameAndNamespace, render_DomFragment_Attribute_helpers_setStaticAttribute, render_DomFragment_Attribute_helpers_determinePropertyName, render_DomFragment_Attribute_helpers_getInterpolator, render_DomFragment_Attribute_prototype_bind, render_DomFragment_Attribute_prototype_update, render_StringFragment__StringFragment );
 
 	var render_DomFragment_Element_initialise_createElementAttributes = function( DomAttribute ) {
 
@@ -5405,7 +5416,8 @@
 					descriptor: descriptor.f,
 					root: element.root,
 					pNode: node,
-					owner: element
+					owner: element,
+					pElement: element
 				} );
 				if ( docFrag ) {
 					node.appendChild( element.fragment.docFrag );
@@ -6317,6 +6329,7 @@
 			parentFragment = element.parentFragment = options.parentFragment;
 			pNode = parentFragment.pNode;
 			descriptor = element.descriptor = options.descriptor;
+			element.parent = options.pElement;
 			element.root = root = parentFragment.root;
 			element.index = options.index;
 			element.lcName = descriptor.e.toLowerCase();
@@ -6394,8 +6407,19 @@
 					runloop.focus( element.node );
 				}
 			}
+			if ( element.lcName === 'option' ) {
+				element.select = findParentSelect( element.parent );
+			}
 			updateLiveQueries( element );
 		};
+
+		function findParentSelect( element ) {
+			do {
+				if ( element.lcName === 'select' ) {
+					return element;
+				}
+			} while ( element = element.parent );
+		}
 	}( global_runloop, config_types, config_namespaces, utils_create, utils_defineProperty, utils_matches, utils_warn, utils_createElement, shared_getInnerContext, render_DomFragment_Element_initialise_getElementNamespace, render_DomFragment_Element_initialise_createElementAttributes, render_DomFragment_Element_initialise_appendElementChildren, render_DomFragment_Element_initialise_decorate__decorate, render_DomFragment_Element_initialise_addEventProxies__addEventProxies, render_DomFragment_Element_initialise_updateLiveQueries, render_DomFragment_Element_shared_executeTransition__executeTransition, render_DomFragment_shared_enforceCase );
 
 	var render_DomFragment_Element_prototype_teardown = function( executeTransition ) {
@@ -6452,14 +6476,22 @@
 
 	var config_voidElementNames = 'area base br col command doctype embed hr img input keygen link meta param source track wbr'.split( ' ' );
 
-	var render_DomFragment_Element_prototype_toString = function( voidElementNames ) {
+	var render_DomFragment_Element_prototype_toString = function( voidElementNames, isArray ) {
 
 		return function() {
-			var str, i, len;
+			var str, i, len, attrStr;
 			str = '<' + ( this.descriptor.y ? '!doctype' : this.descriptor.e );
 			len = this.attributes.length;
 			for ( i = 0; i < len; i += 1 ) {
-				str += ' ' + this.attributes[ i ].toString();
+				if ( attrStr = this.attributes[ i ].toString() ) {
+					str += ' ' + attrStr;
+				}
+			}
+			if ( this.lcName === 'option' && optionIsSelected( this ) ) {
+				str += ' selected';
+			}
+			if ( this.lcName === 'input' && inputIsCheckedRadio( this ) ) {
+				str += ' checked';
 			}
 			str += '>';
 			if ( this.html ) {
@@ -6470,9 +6502,46 @@
 			if ( voidElementNames.indexOf( this.descriptor.e ) === -1 ) {
 				str += '</' + this.descriptor.e + '>';
 			}
+			this.stringifying = false;
 			return str;
 		};
-	}( config_voidElementNames );
+
+		function optionIsSelected( element ) {
+			var optionValue, selectValueAttribute, selectValueInterpolator, selectValue, i;
+			optionValue = element.attributes.value.value;
+			selectValueAttribute = element.select.attributes.value;
+			selectValueInterpolator = selectValueAttribute.interpolator;
+			if ( !selectValueInterpolator ) {
+				return;
+			}
+			selectValue = element.root.get( selectValueInterpolator.keypath || selectValueInterpolator.ref );
+			if ( selectValue == optionValue ) {
+				return true;
+			}
+			if ( element.select.attributes.multiple && isArray( selectValue ) ) {
+				i = selectValue.length;
+				while ( i-- ) {
+					if ( selectValue[ i ] == optionValue ) {
+						return true;
+					}
+				}
+			}
+		}
+
+		function inputIsCheckedRadio( element ) {
+			var attributes, typeAttribute, valueAttribute, nameAttribute;
+			attributes = element.attributes;
+			typeAttribute = attributes.type;
+			valueAttribute = attributes.value;
+			nameAttribute = attributes.name;
+			if ( !typeAttribute || typeAttribute.value !== 'radio' || !valueAttribute || !nameAttribute.interpolator ) {
+				return;
+			}
+			if ( valueAttribute.value === nameAttribute.interpolator.value ) {
+				return true;
+			}
+		}
+	}( config_voidElementNames, utils_isArray );
 
 	var render_DomFragment_Element_prototype_find = function( matches ) {
 
