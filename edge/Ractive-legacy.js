@@ -1792,7 +1792,11 @@
 				}
 			}
 			key = keys[ 0 ];
-			obj[ key ] = value;
+			if ( ( wrapped = ractive._wrapped[ currentKeypath ] ) && wrapped.set ) {
+				wrapped.set( key, value );
+			} else {
+				obj[ key ] = value;
+			}
 			clearCache( ractive, keypathToClear || keypath );
 		};
 	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
@@ -1838,7 +1842,7 @@
 
 	var shared_get__get = function( circular, adaptorRegistry, hasOwnProperty, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
 
-		function get( ractive, keypath ) {
+		function get( ractive, keypath, evaluateWrapped ) {
 			var cache = ractive._cache,
 				value, wrapped, evaluator;
 			if ( cache[ keypath ] === undefined ) {
@@ -1862,6 +1866,9 @@
 				} else {
 					value = undefined;
 				}
+			}
+			if ( evaluateWrapped && ( wrapped = ractive._wrapped[ keypath ] ) ) {
+				value = wrapped.get();
 			}
 			return value;
 		}
@@ -1917,6 +1924,7 @@
 			wrapped = ractive._wrapped[ keypath ];
 			if ( wrapped && wrapped.reset && wrapped.get() !== value ) {
 				wrapped.reset( value );
+				value = wrapped.get();
 			}
 			if ( evaluator = ractive._evaluators[ keypath ] ) {
 				evaluator.value = value;
@@ -3802,20 +3810,16 @@
 		};
 	}( config_types, shared_registerDependant, shared_unregisterDependant, render_DomFragment_Section_reassignFragment );
 
-	var render_shared_updateMustache = function( isEqual ) {
+	var render_shared_updateMustache = function( isEqual, get ) {
 
 		return function updateMustache() {
-			var wrapped, value;
-			value = this.root.get( this.keypath );
-			if ( wrapped = this.root._wrapped[ this.keypath ] ) {
-				value = wrapped.get();
-			}
+			var value = get( this.root, this.keypath, true );
 			if ( !isEqual( value, this.value ) ) {
 				this.render( value );
 				this.value = value;
 			}
 		};
-	}( utils_isEqual );
+	}( utils_isEqual, shared_get__get );
 
 	var render_DomFragment_Interpolator = function( types, teardown, initMustache, resolveMustache, updateMustache, detach ) {
 
@@ -4511,7 +4515,7 @@
 			this._ractive.binding.update();
 		};
 		update = function() {
-			var value = get( this._ractive.root, this._ractive.binding.keypath );
+			var value = get( this._ractive.root, this._ractive.binding.keypath, true );
 			this.value = value == undefined ? '' : value;
 		};
 		getBinding = function( attribute ) {
