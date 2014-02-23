@@ -8,7 +8,7 @@
 
 	--------------------------------------------------------------
 
-	Copyright 2014 2013 Rich Harris and contributors
+	Copyright 2014 Rich Harris and contributors
 
 	Permission is hereby granted, free of charge, to any person
 	obtaining a copy of this software and associated documentation
@@ -1366,7 +1366,7 @@
 		};
 	}();
 
-	var shared_get_magicAdaptor = function( createBranch, isArray, clearCache, notifyDependants ) {
+	var shared_get_magicAdaptor = function( runloop, createBranch, isArray, clearCache, notifyDependants ) {
 
 		var magicAdaptor, MagicWrapper;
 		try {
@@ -1443,8 +1443,11 @@
 				while ( i-- ) {
 					wrapper = wrappers[ i ];
 					wrapper.resetting = true;
+					runloop.start( wrapper.ractive );
+					wrapper.ractive._changes.push( wrapper.keypath );
 					clearCache( wrapper.ractive, wrapper.keypath );
 					notifyDependants( wrapper.ractive, wrapper.keypath );
+					runloop.end();
 					wrapper.resetting = false;
 				}
 			};
@@ -1498,7 +1501,7 @@
 			}
 		};
 		return magicAdaptor;
-	}( utils_createBranch, utils_isArray, shared_clearCache, shared_notifyDependants );
+	}( global_runloop, utils_createBranch, utils_isArray, shared_clearCache, shared_notifyDependants );
 
 	var shared_get_magicArrayAdaptor = function( magicAdaptor, arrayAdaptor ) {
 
