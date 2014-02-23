@@ -457,6 +457,8 @@
 
 	var registries_adaptors = {};
 
+	var utils_hasOwnProperty = Object.prototype.hasOwnProperty;
+
 	var utils_isArray = function() {
 
 		var toString = Object.prototype.toString;
@@ -633,7 +635,7 @@
 		return '';
 	};
 
-	var shared_resolveRef = function( circular, normaliseKeypath, getInnerContext ) {
+	var shared_resolveRef = function( circular, normaliseKeypath, hasOwnProperty, getInnerContext ) {
 
 		var get, ancestorErrorMessage = 'Could not resolve reference - too many "../" prefixes';
 		circular.push( function() {
@@ -681,13 +683,13 @@
 					return context + '.' + ref;
 				}
 			} while ( fragment = fragment.parent );
-			if ( ractive.data.hasOwnProperty( ref ) ) {
+			if ( hasOwnProperty.call( ractive.data, ref ) ) {
 				return ref;
 			} else if ( get( ractive, ref ) !== undefined ) {
 				return ref;
 			}
 		};
-	}( circular, utils_normaliseKeypath, shared_getInnerContext );
+	}( circular, utils_normaliseKeypath, utils_hasOwnProperty, shared_getInnerContext );
 
 	var global_runloop = function( circular, failedLookups, css, removeFromArray, getValueFromCheckboxes, resolveRef ) {
 
@@ -1747,7 +1749,7 @@
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
 
-	var Ractive_prototype_shared_replaceData = function( clone, createBranch, clearCache ) {
+	var Ractive_prototype_shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
 
 		return function( ractive, keypath, value ) {
 			var keys, accumulated, wrapped, obj, key, currentKeypath, keypathToClear;
@@ -1771,7 +1773,7 @@
 					}
 					obj = wrapped.get();
 				} else {
-					if ( !obj.hasOwnProperty( key ) && key in obj ) {
+					if ( !hasOwnProperty.call( obj, key ) && key in obj ) {
 						if ( !keypathToClear ) {
 							keypathToClear = currentKeypath;
 						}
@@ -1790,7 +1792,7 @@
 			obj[ key ] = value;
 			clearCache( ractive, keypathToClear || keypath );
 		};
-	}( utils_clone, utils_createBranch, shared_clearCache );
+	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
 
 	var shared_get_getFromParent = function( failedLookups, createComponentBinding, replaceData ) {
 
@@ -1831,7 +1833,7 @@
 		FAILED_LOOKUP: true
 	};
 
-	var shared_get__get = function( circular, adaptorRegistry, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
+	var shared_get__get = function( circular, adaptorRegistry, hasOwnProperty, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
 
 		function get( ractive, keypath ) {
 			var cache = ractive._cache,
@@ -1886,12 +1888,12 @@
 				return ractive._cache[ keypath ] = FAILED_LOOKUP;
 			}
 			value = parentValue[ key ];
-			shouldClone = !parentValue.hasOwnProperty( key );
+			shouldClone = !hasOwnProperty.call( parentValue, key );
 			value = adaptIfNecessary( ractive, keypath, value, false, shouldClone );
 			ractive._cache[ keypath ] = value;
 			return value;
 		}
-	}( circular, registries_adaptors, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
+	}( circular, registries_adaptors, utils_hasOwnProperty, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
 
 	var Ractive_prototype_get = function( normaliseKeypath, get ) {
 
@@ -2182,7 +2184,7 @@
 		return !isNaN( parseFloat( thing ) ) && isFinite( thing );
 	};
 
-	var registries_interpolators = function( circular, isArray, isObject, isNumeric ) {
+	var registries_interpolators = function( circular, hasOwnProperty, isArray, isObject, isNumeric ) {
 
 		var interpolators, interpolate, cssLengthPattern;
 		circular.push( function() {
@@ -2241,8 +2243,8 @@
 				intermediate = {};
 				interpolators = {};
 				for ( prop in from ) {
-					if ( from.hasOwnProperty( prop ) ) {
-						if ( to.hasOwnProperty( prop ) ) {
+					if ( hasOwnProperty.call( from, prop ) ) {
+						if ( hasOwnProperty.call( to, prop ) ) {
 							properties.push( prop );
 							interpolators[ prop ] = interpolate( from[ prop ], to[ prop ] );
 						} else {
@@ -2251,7 +2253,7 @@
 					}
 				}
 				for ( prop in to ) {
-					if ( to.hasOwnProperty( prop ) && !from.hasOwnProperty( prop ) ) {
+					if ( hasOwnProperty.call( to, prop ) && !hasOwnProperty.call( from, prop ) ) {
 						intermediate[ prop ] = to[ prop ];
 					}
 				}
@@ -2293,7 +2295,7 @@
 			}
 		};
 		return interpolators;
-	}( circular, utils_isArray, utils_isObject, utils_isNumeric );
+	}( circular, utils_hasOwnProperty, utils_isArray, utils_isObject, utils_isNumeric );
 
 	var shared_interpolate = function( circular, warn, interpolators ) {
 
