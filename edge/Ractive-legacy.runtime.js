@@ -1801,8 +1801,12 @@
 		};
 	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
 
-	var shared_get_getFromParent = function( failedLookups, createComponentBinding, replaceData ) {
+	var shared_get_getFromParent = function( circular, failedLookups, createComponentBinding, replaceData ) {
 
+		var get;
+		circular.push( function() {
+			get = circular.get;
+		} );
 		return function getFromParent( child, keypath ) {
 			var parent, fragment, keypathToTest, value;
 			parent = child._parent;
@@ -1815,13 +1819,13 @@
 					continue;
 				}
 				keypathToTest = fragment.context + '.' + keypath;
-				value = parent.get( keypathToTest );
+				value = get( parent, keypathToTest );
 				if ( value !== undefined ) {
 					createLateComponentBinding( parent, child, keypathToTest, keypath, value );
 					return value;
 				}
 			} while ( fragment = fragment.parent );
-			value = parent.get( keypath );
+			value = get( parent, keypath );
 			if ( value !== undefined ) {
 				createLateComponentBinding( parent, child, keypath, keypath, value );
 				return value;
@@ -1833,7 +1837,7 @@
 			replaceData( child, childKeypath, value );
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
-	}( global_failedLookups, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
+	}( circular, global_failedLookups, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
 
 	var shared_get_FAILED_LOOKUP = {
 		FAILED_LOOKUP: true
@@ -7225,52 +7229,6 @@
 		};
 	}( shared_createComponentBinding, shared_get__get, shared_set );
 
-	var render_DomFragment_Component_initialise_createMagicModeProperties = function( defineProperty, get, set ) {
-
-		return function createMagicModeProperties( component ) {
-			var fragment, ractive, context, object, properties, key, i;
-			fragment = component.parentFragment;
-			ractive = component.root;
-			properties = [];
-			do {
-				context = fragment.context;
-				if ( !context ) {
-					continue;
-				}
-				object = ractive.get( context );
-				for ( key in object ) {
-					if ( !properties[ key ] && object.hasOwnProperty( key ) ) {
-						properties.push( key );
-						properties[ key ] = true;
-					}
-				}
-			} while ( fragment = fragment.parent );
-			for ( key in ractive.data ) {
-				properties.push( key );
-				properties[ key ] = true;
-			}
-			i = properties.length;
-			while ( i-- ) {
-				createAccessors( component.instance, properties[ i ] );
-			}
-		};
-
-		function createAccessors( instance, key ) {
-			defineProperty( instance.data, key, {
-				get: function() {
-					delete instance.data[ key ];
-					return get( instance, key );
-				},
-				set: function( value ) {
-					delete instance.data[ key ];
-					set( instance, key, value );
-				},
-				configurable: true,
-				enumerable: true
-			} );
-		}
-	}( utils_defineProperty, shared_get__get, shared_set );
-
 	var render_DomFragment_Component_initialise_propagateEvents = function( warn ) {
 
 		var errorMessage = 'Components currently only support simple events - you cannot include arguments. Sorry!';
@@ -7311,7 +7269,7 @@
 		}
 	};
 
-	var render_DomFragment_Component_initialise__initialise = function( types, warn, createModel, createInstance, createBindings, createMagicModeProperties, propagateEvents, updateLiveQueries ) {
+	var render_DomFragment_Component_initialise__initialise = function( types, warn, createModel, createInstance, createBindings, propagateEvents, updateLiveQueries ) {
 
 		return function initialiseComponent( component, options, docFrag ) {
 			var parentFragment, root, Component, data, toBind;
@@ -7331,15 +7289,12 @@
 			createInstance( component, Component, data, docFrag, options.descriptor.f );
 			createBindings( component, toBind );
 			propagateEvents( component, options.descriptor.v );
-			if ( root.magic && !Component.defaults.isolated ) {
-				createMagicModeProperties( component );
-			}
 			if ( options.descriptor.t1 || options.descriptor.t2 || options.descriptor.o ) {
 				warn( 'The "intro", "outro" and "decorator" directives have no effect on components' );
 			}
 			updateLiveQueries( component );
 		};
-	}( config_types, utils_warn, render_DomFragment_Component_initialise_createModel__createModel, render_DomFragment_Component_initialise_createInstance, render_DomFragment_Component_initialise_createBindings, render_DomFragment_Component_initialise_createMagicModeProperties, render_DomFragment_Component_initialise_propagateEvents, render_DomFragment_Component_initialise_updateLiveQueries );
+	}( config_types, utils_warn, render_DomFragment_Component_initialise_createModel__createModel, render_DomFragment_Component_initialise_createInstance, render_DomFragment_Component_initialise_createBindings, render_DomFragment_Component_initialise_propagateEvents, render_DomFragment_Component_initialise_updateLiveQueries );
 
 	var render_DomFragment_Component__Component = function( initialise ) {
 
