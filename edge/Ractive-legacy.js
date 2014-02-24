@@ -9464,6 +9464,8 @@
 			append: true,
 			data: data,
 			partials: partials,
+			magic: root.magic,
+			modifyArrays: root.modifyArrays,
 			_parent: root,
 			_component: component,
 			adapt: root.adapt
