@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre - 2014-02-23
+	Ractive - v0.4.0-pre - 2014-02-24
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1578,7 +1578,6 @@
 
 		function createLateComponentBinding( parent, child, parentKeypath, childKeypath, value ) {
 			replaceData( child, childKeypath, value );
-			child._cache[ childKeypath ] = value;
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
 	}( global_failedLookups, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
@@ -6973,6 +6972,52 @@
 		};
 	}( shared_createComponentBinding, shared_get__get, shared_set );
 
+	var render_DomFragment_Component_initialise_createMagicModeProperties = function( defineProperty, get, set ) {
+
+		return function createMagicModeProperties( component ) {
+			var fragment, ractive, context, object, properties, key, i;
+			fragment = component.parentFragment;
+			ractive = component.root;
+			properties = [];
+			do {
+				context = fragment.context;
+				if ( !context ) {
+					continue;
+				}
+				object = ractive.get( context );
+				for ( key in object ) {
+					if ( !properties[ key ] && object.hasOwnProperty( key ) ) {
+						properties.push( key );
+						properties[ key ] = true;
+					}
+				}
+			} while ( fragment = fragment.parent );
+			for ( key in ractive.data ) {
+				properties.push( key );
+				properties[ key ] = true;
+			}
+			i = properties.length;
+			while ( i-- ) {
+				createAccessors( component.instance, properties[ i ] );
+			}
+		};
+
+		function createAccessors( instance, key ) {
+			defineProperty( instance.data, key, {
+				get: function() {
+					delete instance.data[ key ];
+					return get( instance, key );
+				},
+				set: function( value ) {
+					delete instance.data[ key ];
+					set( instance, key, value );
+				},
+				configurable: true,
+				enumerable: true
+			} );
+		}
+	}( utils_defineProperty, shared_get__get, shared_set );
+
 	var render_DomFragment_Component_initialise_propagateEvents = function( warn ) {
 
 		var errorMessage = 'Components currently only support simple events - you cannot include arguments. Sorry!';
@@ -7013,7 +7058,7 @@
 		}
 	};
 
-	var render_DomFragment_Component_initialise__initialise = function( types, warn, createModel, createInstance, createBindings, propagateEvents, updateLiveQueries ) {
+	var render_DomFragment_Component_initialise__initialise = function( types, warn, createModel, createInstance, createBindings, createMagicModeProperties, propagateEvents, updateLiveQueries ) {
 
 		return function initialiseComponent( component, options, docFrag ) {
 			var parentFragment, root, Component, data, toBind;
@@ -7033,12 +7078,15 @@
 			createInstance( component, Component, data, docFrag, options.descriptor.f );
 			createBindings( component, toBind );
 			propagateEvents( component, options.descriptor.v );
+			if ( root.magic && !Component.defaults.isolated ) {
+				createMagicModeProperties( component );
+			}
 			if ( options.descriptor.t1 || options.descriptor.t2 || options.descriptor.o ) {
 				warn( 'The "intro", "outro" and "decorator" directives have no effect on components' );
 			}
 			updateLiveQueries( component );
 		};
-	}( config_types, utils_warn, render_DomFragment_Component_initialise_createModel__createModel, render_DomFragment_Component_initialise_createInstance, render_DomFragment_Component_initialise_createBindings, render_DomFragment_Component_initialise_propagateEvents, render_DomFragment_Component_initialise_updateLiveQueries );
+	}( config_types, utils_warn, render_DomFragment_Component_initialise_createModel__createModel, render_DomFragment_Component_initialise_createInstance, render_DomFragment_Component_initialise_createBindings, render_DomFragment_Component_initialise_createMagicModeProperties, render_DomFragment_Component_initialise_propagateEvents, render_DomFragment_Component_initialise_updateLiveQueries );
 
 	var render_DomFragment_Component__Component = function( initialise ) {
 
