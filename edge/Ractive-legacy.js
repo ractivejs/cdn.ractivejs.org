@@ -9470,9 +9470,11 @@
 			_component: component,
 			adapt: root.adapt
 		} );
-		instance.insert( docFrag );
-		instance.fragment.pNode = instance.el = parentFragment.pNode;
-		instance.fragment.parent = parentFragment;
+		if ( docFrag ) {
+			instance.insert( docFrag );
+			instance.fragment.pNode = instance.el = parentFragment.pNode;
+			instance.fragment.parent = parentFragment;
+		}
 		return instance;
 	};
 
