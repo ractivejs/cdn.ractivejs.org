@@ -6606,6 +6606,9 @@
 				namespace = element.namespace = getElementNamespace( descriptor, pNode );
 				name = namespace !== namespaces.html ? enforceCase( descriptor.e ) : descriptor.e;
 				element.node = createElement( name, namespace );
+				if ( root.css && pNode === root.el ) {
+					element.node.setAttribute( 'data-rvcguid', root.constructor._guid || root._guid );
+				}
 				defineProperty( element.node, '_ractive', {
 					value: {
 						proxy: element,
@@ -7989,7 +7992,47 @@
 		'data'
 	];
 
-	var extend_inheritFromParent = function( registries, create, defineProperty ) {
+	var extend_utils_transformCss = function() {
+
+		return function transformCss( css, guid ) {
+			var selectorsPattern, transformed, addGuid;
+			selectorsPattern = /(?:^|\})?\s*([^\{\}]+)\s*\{/g;
+			addGuid = function( selector ) {
+				var simpleSelectors, dataAttr, prepended, appended, i, transformed = [];
+				simpleSelectors = selector.split( ' ' ).filter( excludeEmpty );
+				dataAttr = '[data-rvcguid="' + guid + '"]';
+				i = simpleSelectors.length;
+				while ( i-- ) {
+					appended = simpleSelectors.slice();
+					appended[ i ] += dataAttr;
+					prepended = simpleSelectors.slice();
+					prepended[ i ] = dataAttr + ' ' + prepended[ i ];
+					transformed.push( appended.join( ' ' ), prepended.join( ' ' ) );
+				}
+				return transformed.join( ', ' );
+			};
+			transformed = css.replace( selectorsPattern, function( match, $1 ) {
+				var selectors, transformed;
+				selectors = $1.split( ',' ).map( trim );
+				transformed = selectors.map( addGuid ).join( ', ' ) + ' ';
+				return match.replace( $1, transformed );
+			} );
+			return transformed;
+		};
+
+		function trim( str ) {
+			if ( str.trim ) {
+				return str.trim();
+			}
+			return str.replace( /^\s+/, '' ).replace( /\s+$/, '' );
+		}
+
+		function excludeEmpty( str ) {
+			return !/^\s*$/.test( str );
+		}
+	}();
+
+	var extend_inheritFromParent = function( registries, create, defineProperty, transformCss ) {
 
 		return function( Child, Parent ) {
 			registries.forEach( function( property ) {
@@ -8002,11 +8045,11 @@
 			} );
 			if ( Parent.css ) {
 				defineProperty( Child, 'css', {
-					value: Parent.css
+					value: transformCss( Parent.css, Child._guid )
 				} );
 			}
 		};
-	}( config_registries, utils_create, utils_defineProperty );
+	}( config_registries, utils_create, utils_defineProperty, extend_utils_transformCss );
 
 	var extend_wrapMethod = function( method, superMethod ) {
 		if ( /_super/.test( method ) ) {
@@ -8033,7 +8076,7 @@
 		return target;
 	};
 
-	var extend_inheritFromChildProps = function( initOptions, registries, defineProperty, wrapMethod, augment ) {
+	var extend_inheritFromChildProps = function( initOptions, registries, defineProperty, wrapMethod, augment, transformCss ) {
 
 		var blacklisted = {};
 		registries.concat( initOptions.keys ).forEach( function( property ) {
@@ -8073,11 +8116,11 @@
 			}
 			if ( childProps.css ) {
 				defineProperty( Child, 'css', {
-					value: childProps.css
+					value: transformCss( childProps.css, Child._guid )
 				} );
 			}
 		};
-	}( config_initOptions, config_registries, utils_defineProperty, extend_wrapMethod, extend_utils_augment );
+	}( config_initOptions, config_registries, utils_defineProperty, extend_wrapMethod, extend_utils_augment, extend_utils_transformCss );
 
 	var extend_extractInlinePartials = function( isObject, augment ) {
 
@@ -8343,13 +8386,6 @@
 			};
 			Child.prototype = create( Parent.prototype );
 			Child.prototype.constructor = Child;
-			inheritFromParent( Child, Parent );
-			inheritFromChildProps( Child, childProps );
-			if ( childProps.template ) {
-				conditionallyParseTemplate( Child );
-				extractInlinePartials( Child, childProps );
-				conditionallyParsePartials( Child );
-			}
 			defineProperties( Child, {
 				extend: {
 					value: Parent.extend
@@ -8358,6 +8394,13 @@
 					value: getGuid()
 				}
 			} );
+			inheritFromParent( Child, Parent );
+			inheritFromChildProps( Child, childProps );
+			if ( childProps.template ) {
+				conditionallyParseTemplate( Child );
+				extractInlinePartials( Child, childProps );
+				conditionallyParsePartials( Child );
+			}
 			return Child;
 		};
 	}( utils_create, utils_defineProperties, utils_getGuid, utils_extend, extend_inheritFromParent, extend_inheritFromChildProps, extend_extractInlinePartials, extend_conditionallyParseTemplate, extend_conditionallyParsePartials, extend_initChildInstance, circular );
