@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre - 2014-02-24
+	Ractive - v0.4.0-pre - 2014-02-26
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -426,7 +426,7 @@
 				if ( wrapped = ractive._wrapped[ parentKeypath ] ) {
 					parentValue = wrapped.get();
 				}
-				if ( typeof parentValue === 'object' && parentValue !== null && lastKey in parentValue ) {
+				if ( parentValue && ( typeof parentValue === 'object' || typeof parentValue === 'function' ) && lastKey in parentValue ) {
 					return context + '.' + ref;
 				}
 			} while ( fragment = fragment.parent );
@@ -3751,7 +3751,7 @@
 			}
 			if ( isArray( value ) ) {
 				updateListSection( section, value, fragmentOptions );
-			} else if ( isObject( value ) ) {
+			} else if ( isObject( value ) || typeof value === 'function' ) {
 				if ( section.descriptor.i ) {
 					updateListObjectSection( section, value, fragmentOptions );
 				} else {
