@@ -7994,17 +7994,19 @@
 
 	var extend_utils_transformCss = function() {
 
+		var selectorsPattern = /(?:^|\})?\s*([^\{\}]+)\s*\{/g,
+			pseudoSelectorPattern = /([^:]*)(::?[^:]+)?/;
 		return function transformCss( css, guid ) {
-			var selectorsPattern, transformed, addGuid;
-			selectorsPattern = /(?:^|\})?\s*([^\{\}]+)\s*\{/g;
+			var transformed, addGuid;
 			addGuid = function( selector ) {
-				var simpleSelectors, dataAttr, prepended, appended, i, transformed = [];
+				var simpleSelectors, dataAttr, prepended, appended, pseudo, i, transformed = [];
 				simpleSelectors = selector.split( ' ' ).filter( excludeEmpty );
 				dataAttr = '[data-rvcguid="' + guid + '"]';
 				i = simpleSelectors.length;
 				while ( i-- ) {
 					appended = simpleSelectors.slice();
-					appended[ i ] += dataAttr;
+					pseudo = pseudoSelectorPattern.exec( appended[ i ] );
+					appended[ i ] = pseudo[ 1 ] + dataAttr + ( pseudo[ 2 ] || '' );
 					prepended = simpleSelectors.slice();
 					prepended[ i ] = dataAttr + ' ' + prepended[ i ];
 					transformed.push( appended.join( ' ' ), prepended.join( ' ' ) );
