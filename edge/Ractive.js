@@ -6490,7 +6490,7 @@
 			var eventName, binding, bindings;
 			if ( destroy ) {
 				this.willDetach = true;
-				this.root._transitionManager.detachQueue.push( this );
+				findTransitionManager( this.root ).detachQueue.push( this );
 			}
 			if ( this.fragment ) {
 				this.fragment.teardown( false );
@@ -6533,6 +6533,15 @@
 					}
 				}
 			}
+		}
+
+		function findTransitionManager( instance ) {
+			var transitionManager;
+			do {
+				if ( transitionManager = instance._transitionManager ) {
+					return transitionManager;
+				}
+			} while ( instance = instance._parent );
 		}
 	}( render_DomFragment_Element_shared_executeTransition__executeTransition );
 
