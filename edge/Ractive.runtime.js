@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre - 2014-02-26
+	Ractive - v0.4.0-pre1 - 2014-02-28
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -6944,31 +6944,57 @@
 		}
 	}( config_types, utils_parseJSON, shared_resolveRef, shared_get__get, render_DomFragment_Component_initialise_createModel_ComponentParameter );
 
-	var render_DomFragment_Component_initialise_createInstance = function( component, Component, data, docFrag, contentDescriptor ) {
-		var instance, parentFragment, partials, root;
-		parentFragment = component.parentFragment;
-		root = component.root;
-		partials = {
-			content: contentDescriptor || []
+	var render_DomFragment_Component_initialise_createInstance = function() {
+
+		return function( component, Component, data, docFrag, contentDescriptor ) {
+			var instance, parentFragment, partials, root, adapt;
+			parentFragment = component.parentFragment;
+			root = component.root;
+			partials = {
+				content: contentDescriptor || []
+			};
+			adapt = combineAdaptors( root, Component.defaults.adapt, Component.adaptors );
+			instance = new Component( {
+				el: parentFragment.pNode,
+				append: true,
+				data: data,
+				partials: partials,
+				magic: root.magic,
+				modifyArrays: root.modifyArrays,
+				_parent: root,
+				_component: component,
+				adapt: adapt
+			} );
+			if ( docFrag ) {
+				instance.insert( docFrag );
+				instance.fragment.pNode = instance.el = parentFragment.pNode;
+				instance.fragment.parent = parentFragment;
+			}
+			return instance;
 		};
-		instance = new Component( {
-			el: parentFragment.pNode,
-			append: true,
-			data: data,
-			partials: partials,
-			magic: root.magic,
-			modifyArrays: root.modifyArrays,
-			_parent: root,
-			_component: component,
-			adapt: root.adapt
-		} );
-		if ( docFrag ) {
-			instance.insert( docFrag );
-			instance.fragment.pNode = instance.el = parentFragment.pNode;
-			instance.fragment.parent = parentFragment;
+
+		function combineAdaptors( root, defaultAdapt ) {
+			var adapt, len, i;
+			if ( root.adapt.length ) {
+				adapt = root.adapt.map( function( stringOrObject ) {
+					if ( typeof stringOrObject === 'object' ) {
+						return stringOrObject;
+					}
+					return root.adaptors[ stringOrObject ] || stringOrObject;
+				} );
+			} else {
+				adapt = [];
+			}
+			if ( len = defaultAdapt.length ) {
+				for ( i = 0; i < len; i += 1 ) {
+					if ( adapt.indexOf( defaultAdapt[ i ] ) === -1 ) {
+						adapt.push( defaultAdapt[ i ] );
+					}
+				}
+			}
+			return adapt;
 		}
-		return instance;
-	};
+	}();
 
 	var render_DomFragment_Component_initialise_createBindings = function( createComponentBinding, get, set ) {
 
@@ -8126,7 +8152,7 @@
 		} );
 		return function extend( childProps ) {
 			var Parent = this,
-				Child;
+				Child, adaptor, i;
 			if ( childProps.prototype instanceof Ractive ) {
 				childProps = extendObject( {}, childProps, childProps.prototype, childProps.defaults );
 			}
@@ -8145,6 +8171,14 @@
 			} );
 			inheritFromParent( Child, Parent );
 			inheritFromChildProps( Child, childProps );
+			if ( Child.adaptors && ( i = Child.defaults.adapt.length ) ) {
+				while ( i-- ) {
+					adaptor = Child.defaults.adapt[ i ];
+					if ( typeof adaptor === 'string' ) {
+						Child.defaults.adapt[ i ] = Child.adaptors[ adaptor ] || adaptor;
+					}
+				}
+			}
 			if ( childProps.template ) {
 				conditionallyParseTemplate( Child );
 				extractInlinePartials( Child, childProps );
@@ -8194,7 +8228,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '0.4.0-pre'
+				value: '0.4.0-pre1'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
