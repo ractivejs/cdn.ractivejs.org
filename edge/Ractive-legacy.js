@@ -527,27 +527,6 @@
 		INVOCATION: 40
 	};
 
-	var global_failedLookups = function() {
-
-		var failed, dirty, failedLookups;
-		failed = {};
-		dirty = false;
-		failedLookups = function( keypath ) {
-			return failed[ keypath ];
-		};
-		failedLookups.add = function( keypath ) {
-			failed[ keypath ] = true;
-			dirty = true;
-		};
-		failedLookups.purge = function() {
-			if ( dirty ) {
-				failed = {};
-				dirty = false;
-			}
-		};
-		return failedLookups;
-	}();
-
 	var utils_removeFromArray = function( array, member ) {
 		var index = array.indexOf( member );
 		if ( index !== -1 ) {
@@ -691,7 +670,7 @@
 		};
 	}( circular, utils_normaliseKeypath, utils_hasOwnProperty, shared_getInnerContext );
 
-	var global_runloop = function( circular, failedLookups, css, removeFromArray, getValueFromCheckboxes, resolveRef ) {
+	var global_runloop = function( circular, css, removeFromArray, getValueFromCheckboxes, resolveRef ) {
 
 		circular.push( function() {
 			get = circular.get;
@@ -842,7 +821,6 @@
 			attemptKeypathResolution();
 			while ( dirty ) {
 				dirty = false;
-				failedLookups.purge();
 				while ( thing = evaluators.pop() ) {
 					thing.update().deferred = false;
 				}
@@ -876,7 +854,7 @@
 				}
 			}
 		}
-	}( circular, global_failedLookups, global_css, utils_removeFromArray, shared_getValueFromCheckboxes, shared_resolveRef );
+	}( circular, global_css, utils_removeFromArray, shared_getValueFromCheckboxes, shared_resolveRef );
 
 	var shared_clearCache = function clearCache( ractive, keypath ) {
 		var cacheMap, wrappedProperty;
@@ -1752,6 +1730,41 @@
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
 
+	var shared_get_FailedLookup = function( circular, removeFromArray, registerDependant, unregisterDependant, notifyDependants ) {
+
+		var get;
+		circular.push( function() {
+			get = circular.get;
+		} );
+		var FailedLookup = function( child, parent, keypath, parentFragment ) {
+			this.root = parent;
+			this.ref = keypath;
+			this.parentFragment = parentFragment;
+			this.child = child;
+			registerDependant( this );
+		};
+		FailedLookup.prototype = {
+			resolve: function() {
+				var child, upstreamChanges, keys;
+				child = this.child;
+				child._failedLookups[ this.ref ] = false;
+				removeFromArray( child._failedLookups, this );
+				get( child, this.ref );
+				keys = this.ref.split( '.' );
+				upstreamChanges = [];
+				while ( keys.pop() ) {
+					upstreamChanges.push( keys.join( '.' ) );
+				}
+				notifyDependants.multiple( child, upstreamChanges, true );
+				notifyDependants( child, this.ref );
+			},
+			teardown: function() {
+				unregisterDependant( this );
+			}
+		};
+		return FailedLookup;
+	}( circular, utils_removeFromArray, shared_registerDependant, shared_unregisterDependant, shared_notifyDependants );
+
 	var Ractive_prototype_shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
 
 		return function( ractive, keypath, value ) {
@@ -1801,16 +1814,16 @@
 		};
 	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
 
-	var shared_get_getFromParent = function( circular, failedLookups, createComponentBinding, replaceData ) {
+	var shared_get_getFromParent = function( circular, runloop, createComponentBinding, FailedLookup, replaceData ) {
 
 		var get;
 		circular.push( function() {
 			get = circular.get;
 		} );
-		return function getFromParent( child, keypath ) {
-			var parent, fragment, keypathToTest, value;
+		return function getFromParent( child, keypath, options ) {
+			var parent, fragment, keypathToTest, value, failedLookup;
 			parent = child._parent;
-			if ( failedLookups( child._guid + keypath ) ) {
+			if ( child._failedLookups[ keypath ] ) {
 				return;
 			}
 			fragment = child.component.parentFragment;
@@ -1830,14 +1843,19 @@
 				createLateComponentBinding( parent, child, keypath, keypath, value );
 				return value;
 			}
-			failedLookups.add( child._guid + keypath );
+			if ( options && options.isTopLevel ) {
+				failedLookup = new FailedLookup( child, parent, keypath, child.component.parentFragment );
+				child._failedLookups[ keypath ] = true;
+				child._failedLookups.push( failedLookup );
+				runloop.addUnresolved( failedLookup );
+			}
 		};
 
 		function createLateComponentBinding( parent, child, parentKeypath, childKeypath, value ) {
 			replaceData( child, childKeypath, value );
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
-	}( circular, global_failedLookups, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
+	}( circular, global_runloop, shared_createComponentBinding, shared_get_FailedLookup, Ractive_prototype_shared_replaceData );
 
 	var shared_get_FAILED_LOOKUP = {
 		FAILED_LOOKUP: true
@@ -1845,7 +1863,7 @@
 
 	var shared_get__get = function( circular, adaptorRegistry, hasOwnProperty, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
 
-		function get( ractive, keypath, evaluateWrapped ) {
+		function get( ractive, keypath, options ) {
 			var cache = ractive._cache,
 				value, wrapped, evaluator;
 			if ( cache[ keypath ] === undefined ) {
@@ -1865,12 +1883,12 @@
 			}
 			if ( value === FAILED_LOOKUP ) {
 				if ( ractive._parent && !ractive.isolated ) {
-					value = getFromParent( ractive, keypath );
+					value = getFromParent( ractive, keypath, options );
 				} else {
 					value = undefined;
 				}
 			}
-			if ( evaluateWrapped && ( wrapped = ractive._wrapped[ keypath ] ) ) {
+			if ( options && options.evaluateWrapped && ( wrapped = ractive._wrapped[ keypath ] ) ) {
 				value = wrapped.get();
 			}
 			return value;
@@ -1910,13 +1928,18 @@
 
 	var Ractive_prototype_get = function( normaliseKeypath, get ) {
 
+		var options = {
+			isTopLevel: true
+		};
 		return function Ractive_prototype_get( keypath ) {
+			var value;
 			keypath = normaliseKeypath( keypath );
 			if ( this._captured && !this._captured[ keypath ] ) {
 				this._captured.push( keypath );
 				this._captured[ keypath ] = true;
 			}
-			return get( this, keypath );
+			value = get( this, keypath, options );
+			return value;
 		};
 	}( utils_normaliseKeypath, shared_get__get );
 
@@ -3966,8 +3989,11 @@
 
 	var render_shared_updateMustache = function( isEqual, get ) {
 
+		var options = {
+			evaluateWrapped: true
+		};
 		return function updateMustache() {
-			var value = get( this.root, this.keypath, true );
+			var value = get( this.root, this.keypath, options );
 			if ( !isEqual( value, this.value ) ) {
 				this.render( value );
 				this.value = value;
@@ -4638,7 +4664,7 @@
 
 		var singleMustacheError = 'For two-way binding to work, attribute value must be a single interpolator (e.g. value="{{foo}}")',
 			expressionError = 'You cannot set up two-way binding against an expression ',
-			bindAttribute, updateModel, update, getBinding, inheritProperties, MultipleSelectBinding, SelectBinding, RadioNameBinding, CheckboxNameBinding, CheckedBinding, FileListBinding, ContentEditableBinding, GenericBinding;
+			bindAttribute, updateModel, getOptions, update, getBinding, inheritProperties, MultipleSelectBinding, SelectBinding, RadioNameBinding, CheckboxNameBinding, CheckedBinding, FileListBinding, ContentEditableBinding, GenericBinding;
 		bindAttribute = function() {
 			var node = this.pNode,
 				interpolator, binding, bindings;
@@ -4668,8 +4694,11 @@
 		updateModel = function() {
 			this._ractive.binding.update();
 		};
+		getOptions = {
+			evaluateWrapped: true
+		};
 		update = function() {
-			var value = get( this._ractive.root, this._ractive.binding.keypath, true );
+			var value = get( this._ractive.root, this._ractive.binding.keypath, getOptions );
 			this.value = value == undefined ? '' : value;
 		};
 		getBinding = function( attribute ) {
@@ -9947,7 +9976,7 @@
 	var Ractive_prototype_teardown = function( types, Promise, makeTransitionManager, clearCache, css ) {
 
 		return function( callback ) {
-			var keypath, promise, fulfilPromise, transitionManager, shouldDestroy, originalCallback, fragment, nearestDetachingElement;
+			var keypath, promise, fulfilPromise, transitionManager, shouldDestroy, originalCallback, fragment, nearestDetachingElement, failedLookup;
 			this.fire( 'teardown' );
 			shouldDestroy = !this.component || this.component.shouldDestroy;
 			if ( this.constructor.css ) {
@@ -9985,6 +10014,9 @@
 			}
 			for ( keypath in this._cache ) {
 				clearCache( this, keypath );
+			}
+			while ( failedLookup = this._failedLookups.pop() ) {
+				failedLookup.teardown();
 			}
 			transitionManager.init();
 			if ( callback ) {
@@ -10575,6 +10607,9 @@
 					value: []
 				},
 				_changes: {
+					value: []
+				},
+				_failedLookups: {
 					value: []
 				}
 			} );
