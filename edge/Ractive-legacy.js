@@ -1920,6 +1920,141 @@
 		};
 	}( utils_normaliseKeypath, shared_get__get );
 
+	var utils_Promise = function() {
+
+		var Promise, PENDING = {}, FULFILLED = {}, REJECTED = {};
+		Promise = function( callback ) {
+			var fulfilledHandlers = [],
+				rejectedHandlers = [],
+				state = PENDING,
+				result, dispatchHandlers, makeResolver, fulfil, reject;
+			makeResolver = function( newState ) {
+				return function( value ) {
+					if ( state !== PENDING ) {
+						return;
+					}
+					result = value;
+					state = newState;
+					dispatchHandlers = makeDispatcher( state === FULFILLED ? fulfilledHandlers : rejectedHandlers, result );
+					wait( dispatchHandlers );
+				};
+			};
+			fulfil = makeResolver( FULFILLED );
+			reject = makeResolver( REJECTED );
+			callback( fulfil, reject );
+			return {
+				then: function( onFulfilled, onRejected ) {
+					var promise2 = new Promise( function( fulfil, reject ) {
+						var processResolutionHandler = function( handler, handlers, forward ) {
+							if ( typeof handler === 'function' ) {
+								handlers.push( function( p1result ) {
+									var x;
+									try {
+										x = handler( p1result );
+										resolve( promise2, x, fulfil, reject );
+									} catch ( err ) {
+										reject( err );
+									}
+								} );
+							} else {
+								handlers.push( forward );
+							}
+						};
+						processResolutionHandler( onFulfilled, fulfilledHandlers, fulfil );
+						processResolutionHandler( onRejected, rejectedHandlers, reject );
+						if ( state !== PENDING ) {
+							wait( dispatchHandlers );
+						}
+					} );
+					return promise2;
+				}
+			};
+		};
+		Promise.all = function( promises ) {
+			return new Promise( function( fulfil, reject ) {
+				var result = [],
+					pending, i, processPromise;
+				if ( !promises.length ) {
+					fulfil( result );
+					return;
+				}
+				processPromise = function( i ) {
+					promises[ i ].then( function( value ) {
+						result[ i ] = value;
+						if ( !--pending ) {
+							fulfil( result );
+						}
+					}, reject );
+				};
+				pending = i = promises.length;
+				while ( i-- ) {
+					processPromise( i );
+				}
+			} );
+		};
+		return Promise;
+
+		function wait( callback ) {
+			setTimeout( callback, 0 );
+		}
+
+		function makeDispatcher( handlers, result ) {
+			return function() {
+				var handler;
+				while ( handler = handlers.shift() ) {
+					handler( result );
+				}
+			};
+		}
+
+		function resolve( promise, x, fulfil, reject ) {
+			var then;
+			if ( x === promise ) {
+				throw new TypeError( 'A promise\'s fulfillment handler cannot return the same promise' );
+			}
+			if ( x instanceof Promise ) {
+				x.then( fulfil, reject );
+			} else if ( x && ( typeof x === 'object' || typeof x === 'function' ) ) {
+				try {
+					then = x.then;
+				} catch ( e ) {
+					reject( e );
+					return;
+				}
+				if ( typeof then === 'function' ) {
+					var called, resolvePromise, rejectPromise;
+					resolvePromise = function( y ) {
+						if ( called ) {
+							return;
+						}
+						called = true;
+						resolve( promise, y, fulfil, reject );
+					};
+					rejectPromise = function( r ) {
+						if ( called ) {
+							return;
+						}
+						called = true;
+						reject( r );
+					};
+					try {
+						then.call( x, resolvePromise, rejectPromise );
+					} catch ( e ) {
+						if ( !called ) {
+							reject( e );
+							called = true;
+							return;
+						}
+					}
+				} else {
+					fulfil( x );
+				}
+			} else {
+				fulfil( x );
+			}
+		}
+	}();
+
 	var shared_set = function( circular, get, clearCache, notifyDependants, replaceData ) {
 
 		function set( ractive, keypath, value ) {
@@ -1949,16 +2084,19 @@
 		return set;
 	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, Ractive_prototype_shared_replaceData );
 
-	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, get, set, clearCache, notifyDependants, makeTransitionManager ) {
+	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, Promise, get, set, clearCache, notifyDependants, makeTransitionManager ) {
 
-		return function Ractive_prototype_set( keypath, value, complete ) {
-			var map, changes, upstreamChanges, transitionManager;
+		return function Ractive_prototype_set( keypath, value, callback ) {
+			var map, changes, upstreamChanges, promise, fulfilPromise, transitionManager;
 			changes = [];
 			runloop.start( this );
-			this._transitionManager = transitionManager = makeTransitionManager( this, complete );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
 			if ( isObject( keypath ) ) {
 				map = keypath;
-				complete = value;
+				callback = value;
 				for ( keypath in map ) {
 					if ( map.hasOwnProperty( keypath ) ) {
 						value = map[ keypath ];
@@ -1980,7 +2118,10 @@
 			}
 			runloop.end();
 			transitionManager.init();
-			return this;
+			if ( callback ) {
+				promise.then( callback.bind( this ) );
+			}
+			return promise;
 		};
 
 		function getUpstreamChanges( changes ) {
@@ -2001,18 +2142,21 @@
 			}
 			return upstreamChanges;
 		}
-	}( global_runloop, utils_isObject, utils_isEqual, utils_normaliseKeypath, shared_get__get, shared_set, shared_clearCache, shared_notifyDependants, shared_makeTransitionManager );
+	}( global_runloop, utils_isObject, utils_isEqual, utils_normaliseKeypath, utils_Promise, shared_get__get, shared_set, shared_clearCache, shared_notifyDependants, shared_makeTransitionManager );
 
-	var Ractive_prototype_update = function( runloop, makeTransitionManager, clearCache, notifyDependants ) {
+	var Ractive_prototype_update = function( runloop, Promise, makeTransitionManager, clearCache, notifyDependants ) {
 
-		return function( keypath, complete ) {
-			var transitionManager;
+		return function( keypath, callback ) {
+			var promise, fulfilPromise, transitionManager;
 			runloop.start( this );
 			if ( typeof keypath === 'function' ) {
-				complete = keypath;
+				callback = keypath;
 				keypath = '';
 			}
-			this._transitionManager = transitionManager = makeTransitionManager( this, complete );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
 			clearCache( this, keypath || '' );
 			notifyDependants( this, keypath || '' );
 			runloop.end();
@@ -2022,9 +2166,12 @@
 			} else {
 				this.fire( 'update' );
 			}
-			return this;
+			if ( callback ) {
+				promise.then( callback.bind( this ) );
+			}
+			return promise;
 		};
-	}( global_runloop, shared_makeTransitionManager, shared_clearCache, shared_notifyDependants );
+	}( global_runloop, utils_Promise, shared_makeTransitionManager, shared_clearCache, shared_notifyDependants );
 
 	var utils_arrayContentsMatch = function( isArray ) {
 
@@ -2362,9 +2509,7 @@
 						if ( this.step ) {
 							this.step( 1, this.to );
 						}
-						if ( this.complete ) {
-							this.complete( 1, this.to );
-						}
+						this.complete( this.to );
 						index = this.root._animations.indexOf( this );
 						if ( index === -1 ) {
 							warn( 'Animation was not found' );
@@ -2398,13 +2543,16 @@
 		return Animation;
 	}( utils_warn, shared_interpolate );
 
-	var Ractive_prototype_animate__animate = function( isEqual, animations, Animation ) {
+	var Ractive_prototype_animate__animate = function( isEqual, Promise, animations, Animation ) {
 
 		var noAnimation = {
 			stop: function() {}
 		};
 		return function( keypath, to, options ) {
-			var k, animation, animations, easing, duration, step, complete, makeValueCollector, currentValues, collectValue, dummy, dummyOptions;
+			var promise, fulfilPromise, k, animation, animations, easing, duration, step, complete, makeValueCollector, currentValues, collectValue, dummy, dummyOptions;
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
 			if ( typeof keypath === 'object' ) {
 				options = to || {};
 				easing = options.easing;
@@ -2471,12 +2619,15 @@
 				};
 			}
 			options = options || {};
+			if ( options.complete ) {
+				promise.then( options.complete );
+			}
+			options.complete = fulfilPromise;
 			animation = animate( this, keypath, to, options );
-			return {
-				stop: function() {
-					animation.stop();
-				}
+			promise.stop = function() {
+				animation.stop();
 			};
+			return promise;
 		};
 
 		function animate( root, keypath, to, options ) {
@@ -2487,7 +2638,7 @@
 			animations.abort( keypath, root );
 			if ( isEqual( from, to ) ) {
 				if ( options.complete ) {
-					options.complete( 1, options.to );
+					options.complete( options.to );
 				}
 				return noAnimation;
 			}
@@ -2517,7 +2668,7 @@
 			root._animations.push( animation );
 			return animation;
 		}
-	}( utils_isEqual, shared_animations, Ractive_prototype_animate_Animation );
+	}( utils_isEqual, utils_Promise, shared_animations, Ractive_prototype_animate_Animation );
 
 	var Ractive_prototype_on = function( eventName, callback ) {
 		var self = this,
@@ -6047,141 +6198,6 @@
 			return this;
 		};
 	}( render_DomFragment_Element_shared_executeTransition_Transition_helpers_prefix );
-
-	var utils_Promise = function() {
-
-		var Promise, PENDING = {}, FULFILLED = {}, REJECTED = {};
-		Promise = function( callback ) {
-			var fulfilledHandlers = [],
-				rejectedHandlers = [],
-				state = PENDING,
-				result, dispatchHandlers, makeResolver, fulfil, reject;
-			makeResolver = function( newState ) {
-				return function( value ) {
-					if ( state !== PENDING ) {
-						return;
-					}
-					result = value;
-					state = newState;
-					dispatchHandlers = makeDispatcher( state === FULFILLED ? fulfilledHandlers : rejectedHandlers, result );
-					wait( dispatchHandlers );
-				};
-			};
-			fulfil = makeResolver( FULFILLED );
-			reject = makeResolver( REJECTED );
-			callback( fulfil, reject );
-			return {
-				then: function( onFulfilled, onRejected ) {
-					var promise2 = new Promise( function( fulfil, reject ) {
-						var processResolutionHandler = function( handler, handlers, forward ) {
-							if ( typeof handler === 'function' ) {
-								handlers.push( function( p1result ) {
-									var x;
-									try {
-										x = handler( p1result );
-										resolve( promise2, x, fulfil, reject );
-									} catch ( err ) {
-										reject( err );
-									}
-								} );
-							} else {
-								handlers.push( forward );
-							}
-						};
-						processResolutionHandler( onFulfilled, fulfilledHandlers, fulfil );
-						processResolutionHandler( onRejected, rejectedHandlers, reject );
-						if ( state !== PENDING ) {
-							wait( dispatchHandlers );
-						}
-					} );
-					return promise2;
-				}
-			};
-		};
-		Promise.all = function( promises ) {
-			return new Promise( function( fulfil, reject ) {
-				var result = [],
-					pending, i, processPromise;
-				if ( !promises.length ) {
-					fulfil( result );
-					return;
-				}
-				processPromise = function( i ) {
-					promises[ i ].then( function( value ) {
-						result[ i ] = value;
-						if ( !--pending ) {
-							fulfil( result );
-						}
-					}, reject );
-				};
-				pending = i = promises.length;
-				while ( i-- ) {
-					processPromise( i );
-				}
-			} );
-		};
-		return Promise;
-
-		function wait( callback ) {
-			setTimeout( callback, 0 );
-		}
-
-		function makeDispatcher( handlers, result ) {
-			return function() {
-				var handler;
-				while ( handler = handlers.shift() ) {
-					handler( result );
-				}
-			};
-		}
-
-		function resolve( promise, x, fulfil, reject ) {
-			var then;
-			if ( x === promise ) {
-				throw new TypeError( 'A promise\'s fulfillment handler cannot return the same promise' );
-			}
-			if ( x instanceof Promise ) {
-				x.then( fulfil, reject );
-			} else if ( x && ( typeof x === 'object' || typeof x === 'function' ) ) {
-				try {
-					then = x.then;
-				} catch ( e ) {
-					reject( e );
-					return;
-				}
-				if ( typeof then === 'function' ) {
-					var called, resolvePromise, rejectPromise;
-					resolvePromise = function( y ) {
-						if ( called ) {
-							return;
-						}
-						called = true;
-						resolve( promise, y, fulfil, reject );
-					};
-					rejectPromise = function( r ) {
-						if ( called ) {
-							return;
-						}
-						called = true;
-						reject( r );
-					};
-					try {
-						then.call( x, resolvePromise, rejectPromise );
-					} catch ( e ) {
-						if ( !called ) {
-							reject( e );
-							called = true;
-							return;
-						}
-					}
-				} else {
-					fulfil( x );
-				}
-			} else {
-				fulfil( x );
-			}
-		}
-	}();
 
 	var render_DomFragment_Element_shared_executeTransition_Transition_helpers_unprefix = function( vendors ) {
 
@@ -9928,18 +9944,18 @@
 
 	// Teardown. This goes through the root fragment and all its children, removing observers
 	// and generally cleaning up after itself
-	var Ractive_prototype_teardown = function( types, makeTransitionManager, clearCache, css ) {
+	var Ractive_prototype_teardown = function( types, Promise, makeTransitionManager, clearCache, css ) {
 
-		return function( complete ) {
-			var keypath, transitionManager, shouldDestroy, originalComplete, fragment, nearestDetachingElement;
+		return function( callback ) {
+			var keypath, promise, fulfilPromise, transitionManager, shouldDestroy, originalCallback, fragment, nearestDetachingElement;
 			this.fire( 'teardown' );
 			shouldDestroy = !this.component || this.component.shouldDestroy;
 			if ( this.constructor.css ) {
 				if ( shouldDestroy ) {
-					originalComplete = complete;
-					complete = function() {
-						if ( originalComplete ) {
-							originalComplete.call( this );
+					originalCallback = callback;
+					callback = function() {
+						if ( originalCallback ) {
+							originalCallback.call( this );
 						}
 						css.remove( this.constructor );
 					};
@@ -9959,7 +9975,10 @@
 					nearestDetachingElement.cssDetachQueue.push( this.constructor );
 				}
 			}
-			this._transitionManager = transitionManager = makeTransitionManager( this, complete );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
 			this.fragment.teardown( shouldDestroy );
 			while ( this._animations[ 0 ] ) {
 				this._animations[ 0 ].stop();
@@ -9968,8 +9987,12 @@
 				clearCache( this, keypath );
 			}
 			transitionManager.init();
+			if ( callback ) {
+				promise.then( callback.bind( this ) );
+			}
+			return promise;
 		};
-	}( config_types, shared_makeTransitionManager, shared_clearCache, global_css );
+	}( config_types, utils_Promise, shared_makeTransitionManager, shared_clearCache, global_css );
 
 	var Ractive_prototype_shared_add = function( isNumeric ) {
 
