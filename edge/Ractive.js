@@ -367,7 +367,7 @@
 		circular.push( function() {
 			get = circular.get;
 		} );
-		return function( ractive, ref, fragment ) {
+		return function resolveRef( ractive, ref, fragment ) {
 			var context, contextKeys, keys, lastKey, postfix, parentKeypath, parentValue, wrapped;
 			ref = normaliseKeypath( ref );
 			if ( ref === '.' ) {
@@ -417,310 +417,23 @@
 		};
 	}( circular, utils_normaliseKeypath, utils_hasOwnProperty, shared_getInnerContext );
 
-	var global_runloop = function( circular, css, removeFromArray, getValueFromCheckboxes, resolveRef ) {
-
-		circular.push( function() {
-			get = circular.get;
-			set = circular.set;
-		} );
-		var runloop, get, set, dirty = false,
-			flushing = false,
-			pendingCssChanges, inFlight = 0,
-			toFocus = null,
-			liveQueries = [],
-			decorators = [],
-			transitions = [],
-			observers = [],
-			attributes = [],
-			evaluators = [],
-			selectValues = [],
-			checkboxKeypaths = {}, checkboxes = [],
-			radios = [],
-			unresolved = [],
-			instances = [];
-		runloop = {
-			start: function( instance ) {
-				if ( !instances[ instance._guid ] ) {
-					instances.push( instance );
-					instances[ instances._guid ] = true;
-				}
-				if ( flushing ) {
-					return;
-				}
-				inFlight += 1;
-			},
-			end: function() {
-				if ( flushing ) {
-					attemptKeypathResolution();
-					return;
-				}
-				if ( !--inFlight ) {
-					flushing = true;
-					flushChanges();
-					flushing = false;
-					land();
-				}
-			},
-			trigger: function() {
-				if ( inFlight || flushing ) {
-					attemptKeypathResolution();
-					return;
-				}
-				flushing = true;
-				flushChanges();
-				flushing = false;
-				land();
-			},
-			focus: function( node ) {
-				toFocus = node;
-			},
-			addLiveQuery: function( query ) {
-				liveQueries.push( query );
-			},
-			addDecorator: function( decorator ) {
-				decorators.push( decorator );
-			},
-			addTransition: function( transition ) {
-				transitions.push( transition );
-			},
-			addObserver: function( observer ) {
-				observers.push( observer );
-			},
-			addAttribute: function( attribute ) {
-				attributes.push( attribute );
-			},
-			scheduleCssUpdate: function() {
-				if ( !inFlight && !flushing ) {
-					css.update();
-				} else {
-					pendingCssChanges = true;
-				}
-			},
-			addEvaluator: function( evaluator ) {
-				dirty = true;
-				evaluators.push( evaluator );
-			},
-			addSelectValue: function( selectValue ) {
-				dirty = true;
-				selectValues.push( selectValue );
-			},
-			addCheckbox: function( checkbox ) {
-				if ( !checkboxKeypaths[ checkbox.keypath ] ) {
-					dirty = true;
-					checkboxes.push( checkbox );
-				}
-			},
-			addRadio: function( radio ) {
-				dirty = true;
-				radios.push( radio );
-			},
-			addUnresolved: function( thing ) {
-				dirty = true;
-				unresolved.push( thing );
-			},
-			removeUnresolved: function( thing ) {
-				removeFromArray( unresolved, thing );
-			}
-		};
-		circular.runloop = runloop;
-		return runloop;
-
-		function land() {
-			var thing, changedKeypath, changeHash;
-			if ( toFocus ) {
-				toFocus.focus();
-				toFocus = null;
-			}
-			while ( thing = attributes.pop() ) {
-				thing.update().deferred = false;
-			}
-			while ( thing = liveQueries.pop() ) {
-				thing._sort();
-			}
-			while ( thing = decorators.pop() ) {
-				thing.init();
-			}
-			while ( thing = transitions.pop() ) {
-				thing.init();
-			}
-			while ( thing = observers.pop() ) {
-				thing.update();
-			}
-			while ( thing = instances.pop() ) {
-				instances[ thing._guid ] = false;
-				thing._transitionManager = null;
-				if ( thing._changes.length ) {
-					changeHash = {};
-					while ( changedKeypath = thing._changes.pop() ) {
-						changeHash[ changedKeypath ] = get( thing, changedKeypath );
-					}
-					thing.fire( 'change', changeHash );
-				}
-			}
-			if ( pendingCssChanges ) {
-				css.update();
-				pendingCssChanges = false;
-			}
-		}
-
-		function flushChanges() {
-			var thing;
-			attemptKeypathResolution();
-			while ( dirty ) {
-				dirty = false;
-				while ( thing = evaluators.pop() ) {
-					thing.update().deferred = false;
-				}
-				while ( thing = selectValues.pop() ) {
-					thing.deferredUpdate();
-				}
-				while ( thing = checkboxes.pop() ) {
-					set( thing.root, thing.keypath, getValueFromCheckboxes( thing.root, thing.keypath ) );
-				}
-				while ( thing = radios.pop() ) {
-					thing.update();
+	var shared_getUpstreamChanges = function getUpstreamChanges( changes ) {
+		var upstreamChanges = [ '' ],
+			i, keypath, keys, upstreamKeypath;
+		i = changes.length;
+		while ( i-- ) {
+			keypath = changes[ i ];
+			keys = keypath.split( '.' );
+			while ( keys.length > 1 ) {
+				keys.pop();
+				upstreamKeypath = keys.join( '.' );
+				if ( !upstreamChanges[ upstreamKeypath ] ) {
+					upstreamChanges.push( upstreamKeypath );
+					upstreamChanges[ upstreamKeypath ] = true;
 				}
 			}
 		}
-
-		function attemptKeypathResolution() {
-			var array, thing, keypath;
-			if ( !unresolved.length ) {
-				return;
-			}
-			array = unresolved.splice( 0 );
-			while ( thing = array.pop() ) {
-				if ( thing.keypath ) {
-					continue;
-				}
-				keypath = resolveRef( thing.root, thing.ref, thing.parentFragment );
-				if ( keypath !== undefined ) {
-					thing.resolve( keypath );
-				} else {
-					unresolved.push( thing );
-				}
-			}
-		}
-	}( circular, global_css, utils_removeFromArray, shared_getValueFromCheckboxes, shared_resolveRef );
-
-	var shared_clearCache = function clearCache( ractive, keypath ) {
-		var cacheMap, wrappedProperty;
-		if ( wrappedProperty = ractive._wrapped[ keypath ] ) {
-			if ( wrappedProperty.teardown() !== false ) {
-				ractive._wrapped[ keypath ] = null;
-			}
-		}
-		ractive._cache[ keypath ] = undefined;
-		if ( cacheMap = ractive._cacheMap[ keypath ] ) {
-			while ( cacheMap.length ) {
-				clearCache( ractive, cacheMap.pop() );
-			}
-		}
-	};
-
-	/* global console */
-	var utils_warn = function() {
-
-		if ( typeof console !== 'undefined' && typeof console.warn === 'function' && typeof console.warn.apply === 'function' ) {
-			return function() {
-				console.warn.apply( console, arguments );
-			};
-		}
-		return function() {};
-	}();
-
-	var shared_makeTransitionManager = function( warn, removeFromArray ) {
-
-		var makeTransitionManager, checkComplete, remove, init;
-		makeTransitionManager = function( ractive, callback ) {
-			var transitionManager = [];
-			transitionManager.detachQueue = [];
-			transitionManager.remove = remove;
-			transitionManager.init = init;
-			transitionManager._check = checkComplete;
-			transitionManager._root = ractive;
-			transitionManager._callback = callback;
-			transitionManager._previous = ractive._transitionManager;
-			if ( ractive._parent && ( transitionManager._parent = ractive._parent._transitionManager ) ) {
-				transitionManager._parent.push( transitionManager );
-			}
-			return transitionManager;
-		};
-		checkComplete = function() {
-			var ractive, element;
-			if ( this._ready && !this.length ) {
-				ractive = this._root;
-				while ( element = this.detachQueue.pop() ) {
-					element.detach();
-				}
-				if ( typeof this._callback === 'function' ) {
-					this._callback.call( ractive );
-				}
-				if ( this._parent ) {
-					this._parent.remove( this );
-				}
-			}
-		};
-		remove = function( transition ) {
-			removeFromArray( this, transition );
-			this._check();
-		};
-		init = function() {
-			this._ready = true;
-			this._check();
-			if ( this._previous ) {
-				this._root._transitionManager = this._previous;
-			}
-		};
-		return makeTransitionManager;
-	}( utils_warn, utils_removeFromArray );
-
-	var shared_get_arrayAdaptor_getSpliceEquivalent = function( array, methodName, args ) {
-		switch ( methodName ) {
-			case 'splice':
-				return args;
-			case 'sort':
-			case 'reverse':
-				return null;
-			case 'pop':
-				if ( array.length ) {
-					return [ -1 ];
-				}
-				return null;
-			case 'push':
-				return [
-					array.length,
-					0
-				].concat( args );
-			case 'shift':
-				return [
-					0,
-					1
-				];
-			case 'unshift':
-				return [
-					0,
-					0
-				].concat( args );
-		}
-	};
-
-	var shared_get_arrayAdaptor_summariseSpliceOperation = function( array, args ) {
-		var start, addedItems, removedItems, balance;
-		if ( !args ) {
-			return null;
-		}
-		start = +( args[ 0 ] < 0 ? array.length + args[ 0 ] : args[ 0 ] );
-		addedItems = Math.max( 0, args.length - 2 );
-		removedItems = args[ 1 ] !== undefined ? args[ 1 ] : array.length - start;
-		removedItems = Math.min( removedItems, array.length - start );
-		balance = addedItems - removedItems;
-		return {
-			start: start,
-			balance: balance,
-			added: addedItems,
-			removed: removedItems
-		};
+		return upstreamChanges;
 	};
 
 	var shared_notifyDependants = function() {
@@ -863,6 +576,320 @@
 			return starMaps[ num ];
 		}
 	}();
+
+	var global_runloop = function( circular, css, removeFromArray, getValueFromCheckboxes, resolveRef, getUpstreamChanges, notifyDependants ) {
+
+		circular.push( function() {
+			get = circular.get;
+			set = circular.set;
+		} );
+		var runloop, get, set, dirty = false,
+			flushing = false,
+			pendingCssChanges, inFlight = 0,
+			toFocus = null,
+			liveQueries = [],
+			decorators = [],
+			transitions = [],
+			observers = [],
+			attributes = [],
+			evaluators = [],
+			selectValues = [],
+			checkboxKeypaths = {}, checkboxes = [],
+			radios = [],
+			unresolved = [],
+			instances = [];
+		runloop = {
+			start: function( instance ) {
+				if ( instance && !instances[ instance._guid ] ) {
+					instances.push( instance );
+					instances[ instances._guid ] = true;
+				}
+				if ( flushing ) {
+					return;
+				}
+				inFlight += 1;
+			},
+			end: function() {
+				if ( flushing ) {
+					attemptKeypathResolution();
+					return;
+				}
+				if ( !--inFlight ) {
+					flushing = true;
+					flushChanges();
+					flushing = false;
+					land();
+				}
+			},
+			trigger: function() {
+				if ( inFlight || flushing ) {
+					attemptKeypathResolution();
+					return;
+				}
+				flushing = true;
+				flushChanges();
+				flushing = false;
+				land();
+			},
+			focus: function( node ) {
+				toFocus = node;
+			},
+			addLiveQuery: function( query ) {
+				liveQueries.push( query );
+			},
+			addDecorator: function( decorator ) {
+				decorators.push( decorator );
+			},
+			addTransition: function( transition ) {
+				transitions.push( transition );
+			},
+			addObserver: function( observer ) {
+				observers.push( observer );
+			},
+			addAttribute: function( attribute ) {
+				attributes.push( attribute );
+			},
+			scheduleCssUpdate: function() {
+				if ( !inFlight && !flushing ) {
+					css.update();
+				} else {
+					pendingCssChanges = true;
+				}
+			},
+			addEvaluator: function( evaluator ) {
+				dirty = true;
+				evaluators.push( evaluator );
+			},
+			addSelectValue: function( selectValue ) {
+				dirty = true;
+				selectValues.push( selectValue );
+			},
+			addCheckbox: function( checkbox ) {
+				if ( !checkboxKeypaths[ checkbox.keypath ] ) {
+					dirty = true;
+					checkboxes.push( checkbox );
+				}
+			},
+			addRadio: function( radio ) {
+				dirty = true;
+				radios.push( radio );
+			},
+			addUnresolved: function( thing ) {
+				dirty = true;
+				unresolved.push( thing );
+			},
+			removeUnresolved: function( thing ) {
+				removeFromArray( unresolved, thing );
+			}
+		};
+		circular.runloop = runloop;
+		return runloop;
+
+		function land() {
+			var thing, changedKeypath, changeHash;
+			if ( toFocus ) {
+				toFocus.focus();
+				toFocus = null;
+			}
+			while ( thing = attributes.pop() ) {
+				thing.update().deferred = false;
+			}
+			while ( thing = liveQueries.pop() ) {
+				thing._sort();
+			}
+			while ( thing = decorators.pop() ) {
+				thing.init();
+			}
+			while ( thing = transitions.pop() ) {
+				thing.init();
+			}
+			while ( thing = observers.pop() ) {
+				thing.update();
+			}
+			while ( thing = instances.pop() ) {
+				instances[ thing._guid ] = false;
+				thing._transitionManager = null;
+				if ( thing._changes.length ) {
+					changeHash = {};
+					while ( changedKeypath = thing._changes.pop() ) {
+						changeHash[ changedKeypath ] = get( thing, changedKeypath );
+					}
+					thing.fire( 'change', changeHash );
+				}
+			}
+			if ( pendingCssChanges ) {
+				css.update();
+				pendingCssChanges = false;
+			}
+		}
+
+		function flushChanges() {
+			var thing, upstreamChanges, i;
+			attemptKeypathResolution();
+			i = instances.length;
+			while ( i-- ) {
+				thing = instances[ i ];
+				if ( thing._changes.length ) {
+					upstreamChanges = getUpstreamChanges( thing._changes );
+					notifyDependants.multiple( thing, upstreamChanges, true );
+				}
+			}
+			while ( dirty ) {
+				dirty = false;
+				while ( thing = evaluators.pop() ) {
+					thing.update().deferred = false;
+				}
+				while ( thing = selectValues.pop() ) {
+					thing.deferredUpdate();
+				}
+				while ( thing = checkboxes.pop() ) {
+					set( thing.root, thing.keypath, getValueFromCheckboxes( thing.root, thing.keypath ) );
+				}
+				while ( thing = radios.pop() ) {
+					thing.update();
+				}
+			}
+		}
+
+		function attemptKeypathResolution() {
+			var array, thing, keypath;
+			if ( !unresolved.length ) {
+				return;
+			}
+			array = unresolved.splice( 0 );
+			while ( thing = array.pop() ) {
+				if ( thing.keypath ) {
+					continue;
+				}
+				keypath = resolveRef( thing.root, thing.ref, thing.parentFragment );
+				if ( keypath !== undefined ) {
+					thing.resolve( keypath );
+				} else {
+					unresolved.push( thing );
+				}
+			}
+		}
+	}( circular, global_css, utils_removeFromArray, shared_getValueFromCheckboxes, shared_resolveRef, shared_getUpstreamChanges, shared_notifyDependants );
+
+	var shared_clearCache = function clearCache( ractive, keypath ) {
+		var cacheMap, wrappedProperty;
+		if ( wrappedProperty = ractive._wrapped[ keypath ] ) {
+			if ( wrappedProperty.teardown() !== false ) {
+				ractive._wrapped[ keypath ] = null;
+			}
+		}
+		ractive._cache[ keypath ] = undefined;
+		if ( cacheMap = ractive._cacheMap[ keypath ] ) {
+			while ( cacheMap.length ) {
+				clearCache( ractive, cacheMap.pop() );
+			}
+		}
+	};
+
+	/* global console */
+	var utils_warn = function() {
+
+		if ( typeof console !== 'undefined' && typeof console.warn === 'function' && typeof console.warn.apply === 'function' ) {
+			return function() {
+				console.warn.apply( console, arguments );
+			};
+		}
+		return function() {};
+	}();
+
+	var shared_makeTransitionManager = function( warn, removeFromArray ) {
+
+		var makeTransitionManager, checkComplete, remove, init;
+		makeTransitionManager = function( ractive, callback ) {
+			var transitionManager = [];
+			transitionManager.detachQueue = [];
+			transitionManager.remove = remove;
+			transitionManager.init = init;
+			transitionManager._check = checkComplete;
+			transitionManager._root = ractive;
+			transitionManager._callback = callback;
+			transitionManager._previous = ractive._transitionManager;
+			if ( ractive._parent && ( transitionManager._parent = ractive._parent._transitionManager ) ) {
+				transitionManager._parent.push( transitionManager );
+			}
+			return transitionManager;
+		};
+		checkComplete = function() {
+			var ractive, element;
+			if ( this._ready && !this.length ) {
+				ractive = this._root;
+				while ( element = this.detachQueue.pop() ) {
+					element.detach();
+				}
+				if ( typeof this._callback === 'function' ) {
+					this._callback.call( ractive );
+				}
+				if ( this._parent ) {
+					this._parent.remove( this );
+				}
+			}
+		};
+		remove = function( transition ) {
+			removeFromArray( this, transition );
+			this._check();
+		};
+		init = function() {
+			this._ready = true;
+			this._check();
+			if ( this._previous ) {
+				this._root._transitionManager = this._previous;
+			}
+		};
+		return makeTransitionManager;
+	}( utils_warn, utils_removeFromArray );
+
+	var shared_get_arrayAdaptor_getSpliceEquivalent = function( array, methodName, args ) {
+		switch ( methodName ) {
+			case 'splice':
+				return args;
+			case 'sort':
+			case 'reverse':
+				return null;
+			case 'pop':
+				if ( array.length ) {
+					return [ -1 ];
+				}
+				return null;
+			case 'push':
+				return [
+					array.length,
+					0
+				].concat( args );
+			case 'shift':
+				return [
+					0,
+					1
+				];
+			case 'unshift':
+				return [
+					0,
+					0
+				].concat( args );
+		}
+	};
+
+	var shared_get_arrayAdaptor_summariseSpliceOperation = function( array, args ) {
+		var start, addedItems, removedItems, balance;
+		if ( !args ) {
+			return null;
+		}
+		start = +( args[ 0 ] < 0 ? array.length + args[ 0 ] : args[ 0 ] );
+		addedItems = Math.max( 0, args.length - 2 );
+		removedItems = args[ 1 ] !== undefined ? args[ 1 ] : array.length - start;
+		removedItems = Math.min( removedItems, array.length - start );
+		balance = addedItems - removedItems;
+		return {
+			start: start,
+			balance: balance,
+			added: addedItems,
+			removed: removedItems
+		};
+	};
 
 	var shared_get_arrayAdaptor_processWrapper = function( types, clearCache, notifyDependants ) {
 
@@ -1422,9 +1449,10 @@
 
 	var shared_createComponentBinding = function( circular, isArray, isEqual, registerDependant, unregisterDependant ) {
 
-		var get;
+		var get, set;
 		circular.push( function() {
 			get = circular.get;
+			set = circular.set;
 		} );
 		var Binding = function( ractive, keypath, otherInstance, otherKeypath, priority ) {
 			this.root = ractive;
@@ -1447,7 +1475,7 @@
 				}
 				if ( !isEqual( value, this.value ) ) {
 					this.updating = true;
-					this.otherInstance.set( this.otherKeypath, value );
+					set( this.otherInstance, this.otherKeypath, value );
 					this.value = value;
 					this.updating = false;
 				}
@@ -1476,41 +1504,6 @@
 			}
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
-
-	var shared_get_FailedLookup = function( circular, removeFromArray, registerDependant, unregisterDependant, notifyDependants ) {
-
-		var get;
-		circular.push( function() {
-			get = circular.get;
-		} );
-		var FailedLookup = function( child, parent, keypath, parentFragment ) {
-			this.root = parent;
-			this.ref = keypath;
-			this.parentFragment = parentFragment;
-			this.child = child;
-			registerDependant( this );
-		};
-		FailedLookup.prototype = {
-			resolve: function() {
-				var child, upstreamChanges, keys;
-				child = this.child;
-				child._failedLookups[ this.ref ] = false;
-				removeFromArray( child._failedLookups, this );
-				get( child, this.ref );
-				keys = this.ref.split( '.' );
-				upstreamChanges = [];
-				while ( keys.pop() ) {
-					upstreamChanges.push( keys.join( '.' ) );
-				}
-				notifyDependants.multiple( child, upstreamChanges, true );
-				notifyDependants( child, this.ref );
-			},
-			teardown: function() {
-				unregisterDependant( this );
-			}
-		};
-		return FailedLookup;
-	}( circular, utils_removeFromArray, shared_registerDependant, shared_unregisterDependant, shared_notifyDependants );
 
 	var Ractive_prototype_shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
 
@@ -1561,18 +1554,15 @@
 		};
 	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
 
-	var shared_get_getFromParent = function( circular, runloop, createComponentBinding, FailedLookup, replaceData ) {
+	var shared_get_getFromParent = function( circular, runloop, createComponentBinding, replaceData ) {
 
 		var get;
 		circular.push( function() {
 			get = circular.get;
 		} );
-		return function getFromParent( child, keypath, options ) {
-			var parent, fragment, keypathToTest, value, failedLookup;
+		return function getFromParent( child, keypath ) {
+			var parent, fragment, keypathToTest, value;
 			parent = child._parent;
-			if ( child._failedLookups[ keypath ] ) {
-				return;
-			}
 			fragment = child.component.parentFragment;
 			do {
 				if ( !fragment.context ) {
@@ -1590,19 +1580,13 @@
 				createLateComponentBinding( parent, child, keypath, keypath, value );
 				return value;
 			}
-			if ( options && options.isTopLevel ) {
-				failedLookup = new FailedLookup( child, parent, keypath, child.component.parentFragment );
-				child._failedLookups[ keypath ] = true;
-				child._failedLookups.push( failedLookup );
-				runloop.addUnresolved( failedLookup );
-			}
 		};
 
 		function createLateComponentBinding( parent, child, parentKeypath, childKeypath, value ) {
 			replaceData( child, childKeypath, value );
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
-	}( circular, global_runloop, shared_createComponentBinding, shared_get_FailedLookup, Ractive_prototype_shared_replaceData );
+	}( circular, global_runloop, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
 
 	var shared_get_FAILED_LOOKUP = {
 		FAILED_LOOKUP: true
@@ -1673,7 +1657,35 @@
 		}
 	}( circular, registries_adaptors, utils_hasOwnProperty, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
 
-	var Ractive_prototype_get = function( normaliseKeypath, get ) {
+	var shared_get_UnresolvedImplicitDependency = function( circular, removeFromArray, runloop, notifyDependants ) {
+
+		var get, empty = {};
+		circular.push( function() {
+			get = circular.get;
+		} );
+		var UnresolvedImplicitDependency = function( ractive, keypath ) {
+			this.root = ractive;
+			this.ref = keypath;
+			this.parentFragment = empty;
+			ractive._unresolvedImplicitDependencies[ keypath ] = true;
+			ractive._unresolvedImplicitDependencies.push( this );
+			runloop.addUnresolved( this );
+		};
+		UnresolvedImplicitDependency.prototype = {
+			resolve: function() {
+				var ractive = this.root;
+				notifyDependants( ractive, this.ref );
+				ractive._unresolvedImplicitDependencies[ this.ref ] = false;
+				removeFromArray( ractive._unresolvedImplicitDependencies, this );
+			},
+			teardown: function() {
+				runloop.removeUnresolved( this );
+			}
+		};
+		return UnresolvedImplicitDependency;
+	}( circular, utils_removeFromArray, global_runloop, shared_notifyDependants );
+
+	var Ractive_prototype_get = function( normaliseKeypath, get, UnresolvedImplicitDependency ) {
 
 		var options = {
 			isTopLevel: true
@@ -1681,14 +1693,17 @@
 		return function Ractive_prototype_get( keypath ) {
 			var value;
 			keypath = normaliseKeypath( keypath );
+			value = get( this, keypath, options );
 			if ( this._captured && !this._captured[ keypath ] ) {
 				this._captured.push( keypath );
 				this._captured[ keypath ] = true;
+				if ( value === undefined && !this._unresolvedImplicitDependencies[ keypath ] ) {
+					new UnresolvedImplicitDependency( this, keypath );
+				}
 			}
-			value = get( this, keypath, options );
 			return value;
 		};
-	}( utils_normaliseKeypath, shared_get__get );
+	}( utils_normaliseKeypath, shared_get__get, shared_get_UnresolvedImplicitDependency );
 
 	var utils_Promise = function() {
 
@@ -1857,7 +1872,7 @@
 	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, Promise, get, set, clearCache, notifyDependants, makeTransitionManager ) {
 
 		return function Ractive_prototype_set( keypath, value, callback ) {
-			var map, changes, upstreamChanges, promise, fulfilPromise, transitionManager;
+			var map, changes, promise, fulfilPromise, transitionManager;
 			changes = [];
 			runloop.start( this );
 			promise = new Promise( function( fulfil ) {
@@ -1882,10 +1897,6 @@
 					changes.push( keypath );
 				}
 			}
-			upstreamChanges = getUpstreamChanges( changes );
-			if ( upstreamChanges.length ) {
-				notifyDependants.multiple( this, upstreamChanges, true );
-			}
 			runloop.end();
 			transitionManager.init();
 			if ( callback ) {
@@ -1893,25 +1904,6 @@
 			}
 			return promise;
 		};
-
-		function getUpstreamChanges( changes ) {
-			var upstreamChanges = [ '' ],
-				i, keypath, keys, upstreamKeypath;
-			i = changes.length;
-			while ( i-- ) {
-				keypath = changes[ i ];
-				keys = keypath.split( '.' );
-				while ( keys.length > 1 ) {
-					keys.pop();
-					upstreamKeypath = keys.join( '.' );
-					if ( !upstreamChanges[ upstreamKeypath ] ) {
-						upstreamChanges.push( upstreamKeypath );
-						upstreamChanges[ upstreamKeypath ] = true;
-					}
-				}
-			}
-			return upstreamChanges;
-		}
 	}( global_runloop, utils_isObject, utils_isEqual, utils_normaliseKeypath, utils_Promise, shared_get__get, shared_set, shared_clearCache, shared_notifyDependants, shared_makeTransitionManager );
 
 	var Ractive_prototype_update = function( runloop, Promise, makeTransitionManager, clearCache, notifyDependants ) {
@@ -2071,19 +2063,21 @@
 		}
 	}();
 
-	var shared_animations = function( rAF, getTime ) {
+	var shared_animations = function( rAF, getTime, runloop ) {
 
 		var queue = [];
 		var animations = {
 			tick: function() {
 				var i, animation, now;
 				now = getTime();
+				runloop.start();
 				for ( i = 0; i < queue.length; i += 1 ) {
 					animation = queue[ i ];
 					if ( !animation.tick( now ) ) {
 						queue.splice( i--, 1 );
 					}
 				}
+				runloop.end();
 				if ( queue.length ) {
 					rAF( animations.tick );
 				} else {
@@ -2094,7 +2088,7 @@
 				queue.push( animation );
 				if ( !animations.running ) {
 					animations.running = true;
-					animations.tick();
+					rAF( animations.tick );
 				}
 			},
 			abort: function( keypath, root ) {
@@ -2109,7 +2103,7 @@
 			}
 		};
 		return animations;
-	}( utils_requestAnimationFrame, utils_getTime );
+	}( utils_requestAnimationFrame, utils_getTime, global_runloop );
 
 	var utils_isNumeric = function( thing ) {
 		return !isNaN( parseFloat( thing ) ) && isFinite( thing );
@@ -2252,7 +2246,7 @@
 		}
 	}( circular, utils_warn, registries_interpolators );
 
-	var Ractive_prototype_animate_Animation = function( warn, interpolate ) {
+	var Ractive_prototype_animate_Animation = function( warn, runloop, interpolate, set ) {
 
 		var Animation = function( options ) {
 			var key;
@@ -2274,7 +2268,9 @@
 					elapsed = timeNow - this.startTime;
 					if ( elapsed >= this.duration ) {
 						if ( keypath !== null ) {
-							this.root.set( keypath, this.to );
+							runloop.start( this.root );
+							set( this.root, keypath, this.to );
+							runloop.end();
 						}
 						if ( this.step ) {
 							this.step( 1, this.to );
@@ -2291,7 +2287,9 @@
 					t = this.easing ? this.easing( elapsed / this.duration ) : elapsed / this.duration;
 					if ( keypath !== null ) {
 						value = this.interpolator( t );
-						this.root.set( keypath, value );
+						runloop.start( this.root );
+						set( this.root, keypath, value );
+						runloop.end();
 					}
 					if ( this.step ) {
 						this.step( t, value );
@@ -2311,9 +2309,9 @@
 			}
 		};
 		return Animation;
-	}( utils_warn, shared_interpolate );
+	}( utils_warn, global_runloop, shared_interpolate, shared_set );
 
-	var Ractive_prototype_animate__animate = function( isEqual, Promise, animations, Animation ) {
+	var Ractive_prototype_animate__animate = function( isEqual, Promise, normaliseKeypath, animations, get, Animation ) {
 
 		var noAnimation = {
 			stop: function() {}
@@ -2402,8 +2400,11 @@
 
 		function animate( root, keypath, to, options ) {
 			var easing, duration, animation, from;
+			if ( keypath ) {
+				keypath = normaliseKeypath( keypath );
+			}
 			if ( keypath !== null ) {
-				from = root.get( keypath );
+				from = get( root, keypath );
 			}
 			animations.abort( keypath, root );
 			if ( isEqual( from, to ) ) {
@@ -2438,7 +2439,7 @@
 			root._animations.push( animation );
 			return animation;
 		}
-	}( utils_isEqual, utils_Promise, shared_animations, Ractive_prototype_animate_Animation );
+	}( utils_isEqual, utils_Promise, utils_normaliseKeypath, shared_animations, shared_get__get, Ractive_prototype_animate_Animation );
 
 	var Ractive_prototype_on = function( eventName, callback ) {
 		var self = this,
@@ -9723,7 +9724,7 @@
 	var Ractive_prototype_teardown = function( types, Promise, makeTransitionManager, clearCache, css ) {
 
 		return function( callback ) {
-			var keypath, promise, fulfilPromise, transitionManager, shouldDestroy, originalCallback, fragment, nearestDetachingElement, failedLookup;
+			var keypath, promise, fulfilPromise, transitionManager, shouldDestroy, originalCallback, fragment, nearestDetachingElement, unresolvedImplicitDependency;
 			this.fire( 'teardown' );
 			shouldDestroy = !this.component || this.component.shouldDestroy;
 			if ( this.constructor.css ) {
@@ -9762,8 +9763,8 @@
 			for ( keypath in this._cache ) {
 				clearCache( this, keypath );
 			}
-			while ( failedLookup = this._failedLookups.pop() ) {
-				failedLookup.teardown();
+			while ( unresolvedImplicitDependency = this._unresolvedImplicitDependencies.pop() ) {
+				unresolvedImplicitDependency.teardown();
 			}
 			transitionManager.init();
 			if ( callback ) {
@@ -10356,7 +10357,7 @@
 				_changes: {
 					value: []
 				},
-				_failedLookups: {
+				_unresolvedImplicitDependencies: {
 					value: []
 				}
 			} );
