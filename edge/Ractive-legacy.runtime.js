@@ -443,6 +443,190 @@
 		}
 	}( utils_createElement, utils_defineProperty, config_isClient );
 
+	var utils_isNumeric = function( thing ) {
+		return !isNaN( parseFloat( thing ) ) && isFinite( thing );
+	};
+
+	var Ractive_prototype_shared_add = function( isNumeric ) {
+
+		return function( root, keypath, d ) {
+			var value;
+			if ( typeof keypath !== 'string' || !isNumeric( d ) ) {
+				throw new Error( 'Bad arguments' );
+			}
+			value = +root.get( keypath ) || 0;
+			if ( !isNumeric( value ) ) {
+				throw new Error( 'Cannot add to a non-numeric value' );
+			}
+			return root.set( keypath, value + d );
+		};
+	}( utils_isNumeric );
+
+	var Ractive_prototype_add = function( add ) {
+
+		return function( keypath, d ) {
+			return add( this, keypath, d === undefined ? 1 : +d );
+		};
+	}( Ractive_prototype_shared_add );
+
+	var utils_isEqual = function( a, b ) {
+		if ( a === null && b === null ) {
+			return true;
+		}
+		if ( typeof a === 'object' || typeof b === 'object' ) {
+			return false;
+		}
+		return a === b;
+	};
+
+	var utils_Promise = function() {
+
+		var Promise, PENDING = {}, FULFILLED = {}, REJECTED = {};
+		Promise = function( callback ) {
+			var fulfilledHandlers = [],
+				rejectedHandlers = [],
+				state = PENDING,
+				result, dispatchHandlers, makeResolver, fulfil, reject;
+			makeResolver = function( newState ) {
+				return function( value ) {
+					if ( state !== PENDING ) {
+						return;
+					}
+					result = value;
+					state = newState;
+					dispatchHandlers = makeDispatcher( state === FULFILLED ? fulfilledHandlers : rejectedHandlers, result );
+					wait( dispatchHandlers );
+				};
+			};
+			fulfil = makeResolver( FULFILLED );
+			reject = makeResolver( REJECTED );
+			callback( fulfil, reject );
+			return {
+				then: function( onFulfilled, onRejected ) {
+					var promise2 = new Promise( function( fulfil, reject ) {
+						var processResolutionHandler = function( handler, handlers, forward ) {
+							if ( typeof handler === 'function' ) {
+								handlers.push( function( p1result ) {
+									var x;
+									try {
+										x = handler( p1result );
+										resolve( promise2, x, fulfil, reject );
+									} catch ( err ) {
+										reject( err );
+									}
+								} );
+							} else {
+								handlers.push( forward );
+							}
+						};
+						processResolutionHandler( onFulfilled, fulfilledHandlers, fulfil );
+						processResolutionHandler( onRejected, rejectedHandlers, reject );
+						if ( state !== PENDING ) {
+							wait( dispatchHandlers );
+						}
+					} );
+					return promise2;
+				},
+				catch: function( onRejected ) {
+					return this.then( null, onRejected );
+				}
+			};
+		};
+		Promise.all = function( promises ) {
+			return new Promise( function( fulfil, reject ) {
+				var result = [],
+					pending, i, processPromise;
+				if ( !promises.length ) {
+					fulfil( result );
+					return;
+				}
+				processPromise = function( i ) {
+					promises[ i ].then( function( value ) {
+						result[ i ] = value;
+						if ( !--pending ) {
+							fulfil( result );
+						}
+					}, reject );
+				};
+				pending = i = promises.length;
+				while ( i-- ) {
+					processPromise( i );
+				}
+			} );
+		};
+		Promise.resolve = function( value ) {
+			return new Promise( function( fulfil ) {
+				fulfil( value );
+			} );
+		};
+		Promise.reject = function( reason ) {
+			return new Promise( function( fulfil, reject ) {
+				reject( reason );
+			} );
+		};
+		return Promise;
+
+		function wait( callback ) {
+			setTimeout( callback, 0 );
+		}
+
+		function makeDispatcher( handlers, result ) {
+			return function() {
+				var handler;
+				while ( handler = handlers.shift() ) {
+					handler( result );
+				}
+			};
+		}
+
+		function resolve( promise, x, fulfil, reject ) {
+			var then;
+			if ( x === promise ) {
+				throw new TypeError( 'A promise\'s fulfillment handler cannot return the same promise' );
+			}
+			if ( x instanceof Promise ) {
+				x.then( fulfil, reject );
+			} else if ( x && ( typeof x === 'object' || typeof x === 'function' ) ) {
+				try {
+					then = x.then;
+				} catch ( e ) {
+					reject( e );
+					return;
+				}
+				if ( typeof then === 'function' ) {
+					var called, resolvePromise, rejectPromise;
+					resolvePromise = function( y ) {
+						if ( called ) {
+							return;
+						}
+						called = true;
+						resolve( promise, y, fulfil, reject );
+					};
+					rejectPromise = function( r ) {
+						if ( called ) {
+							return;
+						}
+						called = true;
+						reject( r );
+					};
+					try {
+						then.call( x, resolvePromise, rejectPromise );
+					} catch ( e ) {
+						if ( !called ) {
+							reject( e );
+							called = true;
+							return;
+						}
+					}
+				} else {
+					fulfil( x );
+				}
+			} else {
+				fulfil( x );
+			}
+		}
+	}();
+
 	var utils_normaliseKeypath = function() {
 
 		var regex = /\[\s*(\*|[0-9]|[1-9][0-9]+)\s*\]/g;
@@ -451,81 +635,59 @@
 		};
 	}();
 
+	var config_vendors = [
+		'o',
+		'ms',
+		'moz',
+		'webkit'
+	];
+
+	var utils_requestAnimationFrame = function( vendors ) {
+
+		if ( typeof window === 'undefined' ) {
+			return;
+		}
+		( function( vendors, lastTime, window ) {
+			var x, setTimeout;
+			if ( window.requestAnimationFrame ) {
+				return;
+			}
+			for ( x = 0; x < vendors.length && !window.requestAnimationFrame; ++x ) {
+				window.requestAnimationFrame = window[ vendors[ x ] + 'RequestAnimationFrame' ];
+			}
+			if ( !window.requestAnimationFrame ) {
+				setTimeout = window.setTimeout;
+				window.requestAnimationFrame = function( callback ) {
+					var currTime, timeToCall, id;
+					currTime = Date.now();
+					timeToCall = Math.max( 0, 16 - ( currTime - lastTime ) );
+					id = setTimeout( function() {
+						callback( currTime + timeToCall );
+					}, timeToCall );
+					lastTime = currTime + timeToCall;
+					return id;
+				};
+			}
+		}( vendors, 0, window ) );
+		return window.requestAnimationFrame;
+	}( config_vendors );
+
+	var utils_getTime = function() {
+
+		if ( typeof window !== 'undefined' && window.performance && typeof window.performance.now === 'function' ) {
+			return function() {
+				return window.performance.now();
+			};
+		} else {
+			return function() {
+				return Date.now();
+			};
+		}
+	}();
+
 	// This module provides a place to store a) circular dependencies and
 	// b) the callback functions that require those circular dependencies
 	var circular = [];
-
-	var registries_adaptors = {};
-
-	var utils_hasOwnProperty = Object.prototype.hasOwnProperty;
-
-	var utils_isArray = function() {
-
-		var toString = Object.prototype.toString;
-		return function( thing ) {
-			return toString.call( thing ) === '[object Array]';
-		};
-	}();
-
-	var utils_clone = function( isArray ) {
-
-		return function( source ) {
-			var target, key;
-			if ( !source || typeof source !== 'object' ) {
-				return source;
-			}
-			if ( isArray( source ) ) {
-				return source.slice();
-			}
-			target = {};
-			for ( key in source ) {
-				if ( source.hasOwnProperty( key ) ) {
-					target[ key ] = source[ key ];
-				}
-			}
-			return target;
-		};
-	}( utils_isArray );
-
-	var utils_isObject = function() {
-
-		var toString = Object.prototype.toString;
-		return function( thing ) {
-			return typeof thing === 'object' && toString.call( thing ) === '[object Object]';
-		};
-	}();
-
-	var config_types = {
-		TEXT: 1,
-		INTERPOLATOR: 2,
-		TRIPLE: 3,
-		SECTION: 4,
-		INVERTED: 5,
-		CLOSING: 6,
-		ELEMENT: 7,
-		PARTIAL: 8,
-		COMMENT: 9,
-		DELIMCHANGE: 10,
-		MUSTACHE: 11,
-		TAG: 12,
-		ATTRIBUTE: 13,
-		COMPONENT: 15,
-		NUMBER_LITERAL: 20,
-		STRING_LITERAL: 21,
-		ARRAY_LITERAL: 22,
-		OBJECT_LITERAL: 23,
-		BOOLEAN_LITERAL: 24,
-		GLOBAL: 26,
-		KEY_VALUE_PAIR: 27,
-		REFERENCE: 30,
-		REFINEMENT: 31,
-		MEMBER: 32,
-		PREFIX_OPERATOR: 33,
-		BRACKETED: 34,
-		CONDITIONAL: 35,
-		INFIX_OPERATOR: 36,
-		INVOCATION: 40
-	};
 
 	var utils_removeFromArray = function( array, member ) {
 		var index = array.indexOf( member );
@@ -604,6 +766,8 @@
 		}
 		return value;
 	};
+
+	var utils_hasOwnProperty = Object.prototype.hasOwnProperty;
 
 	var shared_getInnerContext = function( fragment ) {
 		do {
@@ -1023,6 +1187,118 @@
 			}
 		}
 	}( circular, global_css, utils_removeFromArray, shared_getValueFromCheckboxes, shared_resolveRef, shared_getUpstreamChanges, shared_notifyDependants );
+
+	var shared_animations = function( rAF, getTime, runloop ) {
+
+		var queue = [];
+		var animations = {
+			tick: function() {
+				var i, animation, now;
+				now = getTime();
+				runloop.start();
+				for ( i = 0; i < queue.length; i += 1 ) {
+					animation = queue[ i ];
+					if ( !animation.tick( now ) ) {
+						queue.splice( i--, 1 );
+					}
+				}
+				runloop.end();
+				if ( queue.length ) {
+					rAF( animations.tick );
+				} else {
+					animations.running = false;
+				}
+			},
+			add: function( animation ) {
+				queue.push( animation );
+				if ( !animations.running ) {
+					animations.running = true;
+					rAF( animations.tick );
+				}
+			},
+			abort: function( keypath, root ) {
+				var i = queue.length,
+					animation;
+				while ( i-- ) {
+					animation = queue[ i ];
+					if ( animation.root === root && animation.keypath === keypath ) {
+						animation.stop();
+					}
+				}
+			}
+		};
+		return animations;
+	}( utils_requestAnimationFrame, utils_getTime, global_runloop );
+
+	var registries_adaptors = {};
+
+	var utils_isArray = function() {
+
+		var toString = Object.prototype.toString;
+		return function( thing ) {
+			return toString.call( thing ) === '[object Array]';
+		};
+	}();
+
+	var utils_clone = function( isArray ) {
+
+		return function( source ) {
+			var target, key;
+			if ( !source || typeof source !== 'object' ) {
+				return source;
+			}
+			if ( isArray( source ) ) {
+				return source.slice();
+			}
+			target = {};
+			for ( key in source ) {
+				if ( source.hasOwnProperty( key ) ) {
+					target[ key ] = source[ key ];
+				}
+			}
+			return target;
+		};
+	}( utils_isArray );
+
+	var utils_isObject = function() {
+
+		var toString = Object.prototype.toString;
+		return function( thing ) {
+			return typeof thing === 'object' && toString.call( thing ) === '[object Object]';
+		};
+	}();
+
+	var config_types = {
+		TEXT: 1,
+		INTERPOLATOR: 2,
+		TRIPLE: 3,
+		SECTION: 4,
+		INVERTED: 5,
+		CLOSING: 6,
+		ELEMENT: 7,
+		PARTIAL: 8,
+		COMMENT: 9,
+		DELIMCHANGE: 10,
+		MUSTACHE: 11,
+		TAG: 12,
+		ATTRIBUTE: 13,
+		COMPONENT: 15,
+		NUMBER_LITERAL: 20,
+		STRING_LITERAL: 21,
+		ARRAY_LITERAL: 22,
+		OBJECT_LITERAL: 23,
+		BOOLEAN_LITERAL: 24,
+		GLOBAL: 26,
+		KEY_VALUE_PAIR: 27,
+		REFERENCE: 30,
+		REFINEMENT: 31,
+		MEMBER: 32,
+		PREFIX_OPERATOR: 33,
+		BRACKETED: 34,
+		CONDITIONAL: 35,
+		INFIX_OPERATOR: 36,
+		INVOCATION: 40
+	};
 
 	var shared_clearCache = function clearCache( ractive, keypath ) {
 		var cacheMap, wrappedProperty;
@@ -1619,16 +1895,6 @@
 		}
 	}( utils_clone, utils_isObject, registries_adaptors, shared_get_arrayAdaptor__arrayAdaptor, shared_get_magicAdaptor, shared_get_magicArrayAdaptor );
 
-	var utils_isEqual = function( a, b ) {
-		if ( a === null && b === null ) {
-			return true;
-		}
-		if ( typeof a === 'object' || typeof b === 'object' ) {
-			return false;
-		}
-		return a === b;
-	};
-
 	var shared_registerDependant = function() {
 
 		return function registerDependant( dependant ) {
@@ -1910,471 +2176,6 @@
 		}
 	}( circular, registries_adaptors, utils_hasOwnProperty, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
 
-	var shared_get_UnresolvedImplicitDependency = function( circular, removeFromArray, runloop, notifyDependants ) {
-
-		var get, empty = {};
-		circular.push( function() {
-			get = circular.get;
-		} );
-		var UnresolvedImplicitDependency = function( ractive, keypath ) {
-			this.root = ractive;
-			this.ref = keypath;
-			this.parentFragment = empty;
-			ractive._unresolvedImplicitDependencies[ keypath ] = true;
-			ractive._unresolvedImplicitDependencies.push( this );
-			runloop.addUnresolved( this );
-		};
-		UnresolvedImplicitDependency.prototype = {
-			resolve: function() {
-				var ractive = this.root;
-				notifyDependants( ractive, this.ref );
-				ractive._unresolvedImplicitDependencies[ this.ref ] = false;
-				removeFromArray( ractive._unresolvedImplicitDependencies, this );
-			},
-			teardown: function() {
-				runloop.removeUnresolved( this );
-			}
-		};
-		return UnresolvedImplicitDependency;
-	}( circular, utils_removeFromArray, global_runloop, shared_notifyDependants );
-
-	var Ractive_prototype_get = function( normaliseKeypath, get, UnresolvedImplicitDependency ) {
-
-		var options = {
-			isTopLevel: true
-		};
-		return function Ractive_prototype_get( keypath ) {
-			var value;
-			keypath = normaliseKeypath( keypath );
-			value = get( this, keypath, options );
-			if ( this._captured && !this._captured[ keypath ] ) {
-				this._captured.push( keypath );
-				this._captured[ keypath ] = true;
-				if ( value === undefined && !this._unresolvedImplicitDependencies[ keypath ] ) {
-					new UnresolvedImplicitDependency( this, keypath );
-				}
-			}
-			return value;
-		};
-	}( utils_normaliseKeypath, shared_get__get, shared_get_UnresolvedImplicitDependency );
-
-	var utils_Promise = function() {
-
-		var Promise, PENDING = {}, FULFILLED = {}, REJECTED = {};
-		Promise = function( callback ) {
-			var fulfilledHandlers = [],
-				rejectedHandlers = [],
-				state = PENDING,
-				result, dispatchHandlers, makeResolver, fulfil, reject;
-			makeResolver = function( newState ) {
-				return function( value ) {
-					if ( state !== PENDING ) {
-						return;
-					}
-					result = value;
-					state = newState;
-					dispatchHandlers = makeDispatcher( state === FULFILLED ? fulfilledHandlers : rejectedHandlers, result );
-					wait( dispatchHandlers );
-				};
-			};
-			fulfil = makeResolver( FULFILLED );
-			reject = makeResolver( REJECTED );
-			callback( fulfil, reject );
-			return {
-				then: function( onFulfilled, onRejected ) {
-					var promise2 = new Promise( function( fulfil, reject ) {
-						var processResolutionHandler = function( handler, handlers, forward ) {
-							if ( typeof handler === 'function' ) {
-								handlers.push( function( p1result ) {
-									var x;
-									try {
-										x = handler( p1result );
-										resolve( promise2, x, fulfil, reject );
-									} catch ( err ) {
-										reject( err );
-									}
-								} );
-							} else {
-								handlers.push( forward );
-							}
-						};
-						processResolutionHandler( onFulfilled, fulfilledHandlers, fulfil );
-						processResolutionHandler( onRejected, rejectedHandlers, reject );
-						if ( state !== PENDING ) {
-							wait( dispatchHandlers );
-						}
-					} );
-					return promise2;
-				},
-				catch: function( onRejected ) {
-					return this.then( null, onRejected );
-				}
-			};
-		};
-		Promise.all = function( promises ) {
-			return new Promise( function( fulfil, reject ) {
-				var result = [],
-					pending, i, processPromise;
-				if ( !promises.length ) {
-					fulfil( result );
-					return;
-				}
-				processPromise = function( i ) {
-					promises[ i ].then( function( value ) {
-						result[ i ] = value;
-						if ( !--pending ) {
-							fulfil( result );
-						}
-					}, reject );
-				};
-				pending = i = promises.length;
-				while ( i-- ) {
-					processPromise( i );
-				}
-			} );
-		};
-		Promise.resolve = function( value ) {
-			return new Promise( function( fulfil ) {
-				fulfil( value );
-			} );
-		};
-		Promise.reject = function( reason ) {
-			return new Promise( function( fulfil, reject ) {
-				reject( reason );
-			} );
-		};
-		return Promise;
-
-		function wait( callback ) {
-			setTimeout( callback, 0 );
-		}
-
-		function makeDispatcher( handlers, result ) {
-			return function() {
-				var handler;
-				while ( handler = handlers.shift() ) {
-					handler( result );
-				}
-			};
-		}
-
-		function resolve( promise, x, fulfil, reject ) {
-			var then;
-			if ( x === promise ) {
-				throw new TypeError( 'A promise\'s fulfillment handler cannot return the same promise' );
-			}
-			if ( x instanceof Promise ) {
-				x.then( fulfil, reject );
-			} else if ( x && ( typeof x === 'object' || typeof x === 'function' ) ) {
-				try {
-					then = x.then;
-				} catch ( e ) {
-					reject( e );
-					return;
-				}
-				if ( typeof then === 'function' ) {
-					var called, resolvePromise, rejectPromise;
-					resolvePromise = function( y ) {
-						if ( called ) {
-							return;
-						}
-						called = true;
-						resolve( promise, y, fulfil, reject );
-					};
-					rejectPromise = function( r ) {
-						if ( called ) {
-							return;
-						}
-						called = true;
-						reject( r );
-					};
-					try {
-						then.call( x, resolvePromise, rejectPromise );
-					} catch ( e ) {
-						if ( !called ) {
-							reject( e );
-							called = true;
-							return;
-						}
-					}
-				} else {
-					fulfil( x );
-				}
-			} else {
-				fulfil( x );
-			}
-		}
-	}();
-
-	var shared_set = function( circular, get, clearCache, notifyDependants, replaceData ) {
-
-		function set( ractive, keypath, value ) {
-			var cached, previous, wrapped, evaluator;
-			wrapped = ractive._wrapped[ keypath ];
-			if ( wrapped && wrapped.reset && wrapped.get() !== value ) {
-				wrapped.reset( value );
-				value = wrapped.get();
-			}
-			if ( evaluator = ractive._evaluators[ keypath ] ) {
-				evaluator.value = value;
-			}
-			cached = ractive._cache[ keypath ];
-			previous = get( ractive, keypath );
-			if ( value === cached && typeof value !== 'object' ) {
-				return;
-			}
-			if ( !evaluator && ( !wrapped || !wrapped.reset ) ) {
-				replaceData( ractive, keypath, value );
-			}
-			ractive._changes.push( keypath );
-			clearCache( ractive, keypath );
-			notifyDependants( ractive, keypath );
-			return true;
-		}
-		circular.set = set;
-		return set;
-	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, Ractive_prototype_shared_replaceData );
-
-	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, Promise, get, set, clearCache, notifyDependants, makeTransitionManager ) {
-
-		return function Ractive_prototype_set( keypath, value, callback ) {
-			var map, changes, promise, fulfilPromise, transitionManager;
-			changes = [];
-			runloop.start( this );
-			promise = new Promise( function( fulfil ) {
-				fulfilPromise = fulfil;
-			} );
-			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
-			if ( isObject( keypath ) ) {
-				map = keypath;
-				callback = value;
-				for ( keypath in map ) {
-					if ( map.hasOwnProperty( keypath ) ) {
-						value = map[ keypath ];
-						keypath = normaliseKeypath( keypath );
-						if ( set( this, keypath, value ) ) {
-							changes.push( keypath );
-						}
-					}
-				}
-			} else {
-				keypath = normaliseKeypath( keypath );
-				if ( set( this, keypath, value ) ) {
-					changes.push( keypath );
-				}
-			}
-			runloop.end();
-			transitionManager.init();
-			if ( callback ) {
-				promise.then( callback.bind( this ) );
-			}
-			return promise;
-		};
-	}( global_runloop, utils_isObject, utils_isEqual, utils_normaliseKeypath, utils_Promise, shared_get__get, shared_set, shared_clearCache, shared_notifyDependants, shared_makeTransitionManager );
-
-	var Ractive_prototype_update = function( runloop, Promise, makeTransitionManager, clearCache, notifyDependants ) {
-
-		return function( keypath, callback ) {
-			var promise, fulfilPromise, transitionManager;
-			runloop.start( this );
-			if ( typeof keypath === 'function' ) {
-				callback = keypath;
-				keypath = '';
-			}
-			promise = new Promise( function( fulfil ) {
-				fulfilPromise = fulfil;
-			} );
-			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
-			clearCache( this, keypath || '' );
-			notifyDependants( this, keypath || '' );
-			runloop.end();
-			transitionManager.init();
-			if ( typeof keypath === 'string' ) {
-				this.fire( 'update', keypath );
-			} else {
-				this.fire( 'update' );
-			}
-			if ( callback ) {
-				promise.then( callback.bind( this ) );
-			}
-			return promise;
-		};
-	}( global_runloop, utils_Promise, shared_makeTransitionManager, shared_clearCache, shared_notifyDependants );
-
-	var utils_arrayContentsMatch = function( isArray ) {
-
-		return function( a, b ) {
-			var i;
-			if ( !isArray( a ) || !isArray( b ) ) {
-				return false;
-			}
-			if ( a.length !== b.length ) {
-				return false;
-			}
-			i = a.length;
-			while ( i-- ) {
-				if ( a[ i ] !== b[ i ] ) {
-					return false;
-				}
-			}
-			return true;
-		};
-	}( utils_isArray );
-
-	var Ractive_prototype_updateModel = function( getValueFromCheckboxes, arrayContentsMatch, isEqual ) {
-
-		return function Ractive_prototype_updateModel( keypath, cascade ) {
-			var values, deferredCheckboxes, i;
-			if ( typeof keypath !== 'string' ) {
-				keypath = '';
-				cascade = true;
-			}
-			consolidateChangedValues( this, keypath, values = {}, deferredCheckboxes = [], cascade );
-			if ( i = deferredCheckboxes.length ) {
-				while ( i-- ) {
-					keypath = deferredCheckboxes[ i ];
-					values[ keypath ] = getValueFromCheckboxes( this, keypath );
-				}
-			}
-			this.set( values );
-		};
-
-		function consolidateChangedValues( ractive, keypath, values, deferredCheckboxes, cascade ) {
-			var bindings, childDeps, i, binding, oldValue, newValue;
-			bindings = ractive._twowayBindings[ keypath ];
-			if ( bindings ) {
-				i = bindings.length;
-				while ( i-- ) {
-					binding = bindings[ i ];
-					if ( binding.radioName && !binding.node.checked ) {
-						continue;
-					}
-					if ( binding.checkboxName ) {
-						if ( binding.changed() && !deferredCheckboxes[ keypath ] ) {
-							deferredCheckboxes[ keypath ] = true;
-							deferredCheckboxes.push( keypath );
-						}
-						continue;
-					}
-					oldValue = binding.attr.value;
-					newValue = binding.value();
-					if ( arrayContentsMatch( oldValue, newValue ) ) {
-						continue;
-					}
-					if ( !isEqual( oldValue, newValue ) ) {
-						values[ keypath ] = newValue;
-					}
-				}
-			}
-			if ( !cascade ) {
-				return;
-			}
-			childDeps = ractive._depsMap[ keypath ];
-			if ( childDeps ) {
-				i = childDeps.length;
-				while ( i-- ) {
-					consolidateChangedValues( ractive, childDeps[ i ], values, deferredCheckboxes, cascade );
-				}
-			}
-		}
-	}( shared_getValueFromCheckboxes, utils_arrayContentsMatch, utils_isEqual );
-
-	var config_vendors = [
-		'o',
-		'ms',
-		'moz',
-		'webkit'
-	];
-
-	var utils_requestAnimationFrame = function( vendors ) {
-
-		if ( typeof window === 'undefined' ) {
-			return;
-		}
-		( function( vendors, lastTime, window ) {
-			var x, setTimeout;
-			if ( window.requestAnimationFrame ) {
-				return;
-			}
-			for ( x = 0; x < vendors.length && !window.requestAnimationFrame; ++x ) {
-				window.requestAnimationFrame = window[ vendors[ x ] + 'RequestAnimationFrame' ];
-			}
-			if ( !window.requestAnimationFrame ) {
-				setTimeout = window.setTimeout;
-				window.requestAnimationFrame = function( callback ) {
-					var currTime, timeToCall, id;
-					currTime = Date.now();
-					timeToCall = Math.max( 0, 16 - ( currTime - lastTime ) );
-					id = setTimeout( function() {
-						callback( currTime + timeToCall );
-					}, timeToCall );
-					lastTime = currTime + timeToCall;
-					return id;
-				};
-			}
-		}( vendors, 0, window ) );
-		return window.requestAnimationFrame;
-	}( config_vendors );
-
-	var utils_getTime = function() {
-
-		if ( typeof window !== 'undefined' && window.performance && typeof window.performance.now === 'function' ) {
-			return function() {
-				return window.performance.now();
-			};
-		} else {
-			return function() {
-				return Date.now();
-			};
-		}
-	}();
-
-	var shared_animations = function( rAF, getTime, runloop ) {
-
-		var queue = [];
-		var animations = {
-			tick: function() {
-				var i, animation, now;
-				now = getTime();
-				runloop.start();
-				for ( i = 0; i < queue.length; i += 1 ) {
-					animation = queue[ i ];
-					if ( !animation.tick( now ) ) {
-						queue.splice( i--, 1 );
-					}
-				}
-				runloop.end();
-				if ( queue.length ) {
-					rAF( animations.tick );
-				} else {
-					animations.running = false;
-				}
-			},
-			add: function( animation ) {
-				queue.push( animation );
-				if ( !animations.running ) {
-					animations.running = true;
-					rAF( animations.tick );
-				}
-			},
-			abort: function( keypath, root ) {
-				var i = queue.length,
-					animation;
-				while ( i-- ) {
-					animation = queue[ i ];
-					if ( animation.root === root && animation.keypath === keypath ) {
-						animation.stop();
-					}
-				}
-			}
-		};
-		return animations;
-	}( utils_requestAnimationFrame, utils_getTime, global_runloop );
-
-	var utils_isNumeric = function( thing ) {
-		return !isNaN( parseFloat( thing ) ) && isFinite( thing );
-	};
-
 	var registries_interpolators = function( circular, hasOwnProperty, isArray, isObject, isNumeric ) {
 
 		var interpolators, interpolate, cssLengthPattern;
@@ -2511,6 +2312,35 @@
 			};
 		}
 	}( circular, utils_warn, registries_interpolators );
+
+	var shared_set = function( circular, get, clearCache, notifyDependants, replaceData ) {
+
+		function set( ractive, keypath, value ) {
+			var cached, previous, wrapped, evaluator;
+			wrapped = ractive._wrapped[ keypath ];
+			if ( wrapped && wrapped.reset && wrapped.get() !== value ) {
+				wrapped.reset( value );
+				value = wrapped.get();
+			}
+			if ( evaluator = ractive._evaluators[ keypath ] ) {
+				evaluator.value = value;
+			}
+			cached = ractive._cache[ keypath ];
+			previous = get( ractive, keypath );
+			if ( value === cached && typeof value !== 'object' ) {
+				return;
+			}
+			if ( !evaluator && ( !wrapped || !wrapped.reset ) ) {
+				replaceData( ractive, keypath, value );
+			}
+			ractive._changes.push( keypath );
+			clearCache( ractive, keypath );
+			notifyDependants( ractive, keypath );
+			return true;
+		}
+		circular.set = set;
+		return set;
+	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, Ractive_prototype_shared_replaceData );
 
 	var Ractive_prototype_animate_Animation = function( warn, runloop, interpolate, set ) {
 
@@ -2707,56 +2537,506 @@
 		}
 	}( utils_isEqual, utils_Promise, utils_normaliseKeypath, shared_animations, shared_get__get, Ractive_prototype_animate_Animation );
 
-	var Ractive_prototype_on = function( eventName, callback ) {
-		var self = this,
-			listeners, n;
-		if ( typeof eventName === 'object' ) {
-			listeners = [];
-			for ( n in eventName ) {
-				if ( eventName.hasOwnProperty( n ) ) {
-					listeners.push( this.on( n, eventName[ n ] ) );
-				}
-			}
-			return {
-				cancel: function() {
-					var listener;
-					while ( listener = listeners.pop() ) {
-						listener.cancel();
-					}
-				}
-			};
-		}
-		if ( !this._subs[ eventName ] ) {
-			this._subs[ eventName ] = [ callback ];
-		} else {
-			this._subs[ eventName ].push( callback );
-		}
-		return {
-			cancel: function() {
-				self.off( eventName, callback );
-			}
-		};
+	var Ractive_prototype_detach = function() {
+		return this.fragment.detach();
 	};
 
-	var Ractive_prototype_off = function( eventName, callback ) {
-		var subscribers, index;
-		if ( !callback ) {
-			if ( !eventName ) {
-				for ( eventName in this._subs ) {
-					delete this._subs[ eventName ];
+	var Ractive_prototype_find = function( selector ) {
+		if ( !this.el ) {
+			return null;
+		}
+		return this.fragment.find( selector );
+	};
+
+	var utils_matches = function( isClient, vendors, createElement ) {
+
+		var div, methodNames, unprefixed, prefixed, i, j, makeFunction;
+		if ( !isClient ) {
+			return;
+		}
+		div = createElement( 'div' );
+		methodNames = [
+			'matches',
+			'matchesSelector'
+		];
+		makeFunction = function( methodName ) {
+			return function( node, selector ) {
+				return node[ methodName ]( selector );
+			};
+		};
+		i = methodNames.length;
+		while ( i-- ) {
+			unprefixed = methodNames[ i ];
+			if ( div[ unprefixed ] ) {
+				return makeFunction( unprefixed );
+			}
+			j = vendors.length;
+			while ( j-- ) {
+				prefixed = vendors[ i ] + unprefixed.substr( 0, 1 ).toUpperCase() + unprefixed.substring( 1 );
+				if ( div[ prefixed ] ) {
+					return makeFunction( prefixed );
 				}
-			} else {
-				this._subs[ eventName ] = [];
 			}
 		}
-		subscribers = this._subs[ eventName ];
-		if ( subscribers ) {
-			index = subscribers.indexOf( callback );
-			if ( index !== -1 ) {
-				subscribers.splice( index, 1 );
+		return function( node, selector ) {
+			var nodes, i;
+			nodes = ( node.parentNode || node.document ).querySelectorAll( selector );
+			i = nodes.length;
+			while ( i-- ) {
+				if ( nodes[ i ] === node ) {
+					return true;
+				}
 			}
+			return false;
+		};
+	}( config_isClient, config_vendors, utils_createElement );
+
+	var Ractive_prototype_shared_makeQuery_test = function( matches ) {
+
+		return function( item, noDirty ) {
+			var itemMatches = this._isComponentQuery ? !this.selector || item.name === this.selector : matches( item.node, this.selector );
+			if ( itemMatches ) {
+				this.push( item.node || item.instance );
+				if ( !noDirty ) {
+					this._makeDirty();
+				}
+				return true;
+			}
+		};
+	}( utils_matches );
+
+	var Ractive_prototype_shared_makeQuery_cancel = function() {
+		var liveQueries, selector, index;
+		liveQueries = this._root[ this._isComponentQuery ? 'liveComponentQueries' : 'liveQueries' ];
+		selector = this.selector;
+		index = liveQueries.indexOf( selector );
+		if ( index !== -1 ) {
+			liveQueries.splice( index, 1 );
+			liveQueries[ selector ] = null;
 		}
 	};
+
+	var Ractive_prototype_shared_makeQuery_sortByItemPosition = function() {
+
+		return function( a, b ) {
+			var ancestryA, ancestryB, oldestA, oldestB, mutualAncestor, indexA, indexB, fragments, fragmentA, fragmentB;
+			ancestryA = getAncestry( a.component || a._ractive.proxy );
+			ancestryB = getAncestry( b.component || b._ractive.proxy );
+			oldestA = ancestryA[ ancestryA.length - 1 ];
+			oldestB = ancestryB[ ancestryB.length - 1 ];
+			while ( oldestA && oldestA === oldestB ) {
+				ancestryA.pop();
+				ancestryB.pop();
+				mutualAncestor = oldestA;
+				oldestA = ancestryA[ ancestryA.length - 1 ];
+				oldestB = ancestryB[ ancestryB.length - 1 ];
+			}
+			oldestA = oldestA.component || oldestA;
+			oldestB = oldestB.component || oldestB;
+			fragmentA = oldestA.parentFragment;
+			fragmentB = oldestB.parentFragment;
+			if ( fragmentA === fragmentB ) {
+				indexA = fragmentA.items.indexOf( oldestA );
+				indexB = fragmentB.items.indexOf( oldestB );
+				return indexA - indexB || ancestryA.length - ancestryB.length;
+			}
+			if ( fragments = mutualAncestor.fragments ) {
+				indexA = fragments.indexOf( fragmentA );
+				indexB = fragments.indexOf( fragmentB );
+				return indexA - indexB || ancestryA.length - ancestryB.length;
+			}
+			throw new Error( 'An unexpected condition was met while comparing the position of two components. Please file an issue at https://github.com/RactiveJS/Ractive/issues - thanks!' );
+		};
+
+		function getParent( item ) {
+			var parentFragment;
+			if ( parentFragment = item.parentFragment ) {
+				return parentFragment.owner;
+			}
+			if ( item.component && ( parentFragment = item.component.parentFragment ) ) {
+				return parentFragment.owner;
+			}
+		}
+
+		function getAncestry( item ) {
+			var ancestry, ancestor;
+			ancestry = [ item ];
+			ancestor = getParent( item );
+			while ( ancestor ) {
+				ancestry.push( ancestor );
+				ancestor = getParent( ancestor );
+			}
+			return ancestry;
+		}
+	}();
+
+	var Ractive_prototype_shared_makeQuery_sortByDocumentPosition = function( sortByItemPosition ) {
+
+		return function( node, otherNode ) {
+			var bitmask;
+			if ( node.compareDocumentPosition ) {
+				bitmask = node.compareDocumentPosition( otherNode );
+				return bitmask & 2 ? 1 : -1;
+			}
+			return sortByItemPosition( node, otherNode );
+		};
+	}( Ractive_prototype_shared_makeQuery_sortByItemPosition );
+
+	var Ractive_prototype_shared_makeQuery_sort = function( sortByDocumentPosition, sortByItemPosition ) {
+
+		return function() {
+			this.sort( this._isComponentQuery ? sortByItemPosition : sortByDocumentPosition );
+			this._dirty = false;
+		};
+	}( Ractive_prototype_shared_makeQuery_sortByDocumentPosition, Ractive_prototype_shared_makeQuery_sortByItemPosition );
+
+	var Ractive_prototype_shared_makeQuery_dirty = function( runloop ) {
+
+		return function() {
+			if ( !this._dirty ) {
+				runloop.addLiveQuery( this );
+				this._dirty = true;
+			}
+		};
+	}( global_runloop );
+
+	var Ractive_prototype_shared_makeQuery_remove = function( nodeOrComponent ) {
+		var index = this.indexOf( this._isComponentQuery ? nodeOrComponent.instance : nodeOrComponent );
+		if ( index !== -1 ) {
+			this.splice( index, 1 );
+		}
+	};
+
+	var Ractive_prototype_shared_makeQuery__makeQuery = function( defineProperties, test, cancel, sort, dirty, remove ) {
+
+		return function( ractive, selector, live, isComponentQuery ) {
+			var query;
+			query = [];
+			defineProperties( query, {
+				selector: {
+					value: selector
+				},
+				live: {
+					value: live
+				},
+				_isComponentQuery: {
+					value: isComponentQuery
+				},
+				_test: {
+					value: test
+				}
+			} );
+			if ( !live ) {
+				return query;
+			}
+			defineProperties( query, {
+				cancel: {
+					value: cancel
+				},
+				_root: {
+					value: ractive
+				},
+				_sort: {
+					value: sort
+				},
+				_makeDirty: {
+					value: dirty
+				},
+				_remove: {
+					value: remove
+				},
+				_dirty: {
+					value: false,
+					writable: true
+				}
+			} );
+			return query;
+		};
+	}( utils_defineProperties, Ractive_prototype_shared_makeQuery_test, Ractive_prototype_shared_makeQuery_cancel, Ractive_prototype_shared_makeQuery_sort, Ractive_prototype_shared_makeQuery_dirty, Ractive_prototype_shared_makeQuery_remove );
+
+	var Ractive_prototype_findAll = function( warn, matches, defineProperties, makeQuery ) {
+
+		return function( selector, options ) {
+			var liveQueries, query;
+			if ( !this.el ) {
+				return [];
+			}
+			options = options || {};
+			liveQueries = this._liveQueries;
+			if ( query = liveQueries[ selector ] ) {
+				return options && options.live ? query : query.slice();
+			}
+			query = makeQuery( this, selector, !! options.live, false );
+			if ( query.live ) {
+				liveQueries.push( selector );
+				liveQueries[ selector ] = query;
+			}
+			this.fragment.findAll( selector, query );
+			return query;
+		};
+	}( utils_warn, utils_matches, utils_defineProperties, Ractive_prototype_shared_makeQuery__makeQuery );
+
+	var Ractive_prototype_findAllComponents = function( warn, matches, defineProperties, makeQuery ) {
+
+		return function( selector, options ) {
+			var liveQueries, query;
+			options = options || {};
+			liveQueries = this._liveComponentQueries;
+			if ( query = liveQueries[ selector ] ) {
+				return options && options.live ? query : query.slice();
+			}
+			query = makeQuery( this, selector, !! options.live, true );
+			if ( query.live ) {
+				liveQueries.push( selector );
+				liveQueries[ selector ] = query;
+			}
+			this.fragment.findAllComponents( selector, query );
+			return query;
+		};
+	}( utils_warn, utils_matches, utils_defineProperties, Ractive_prototype_shared_makeQuery__makeQuery );
+
+	var Ractive_prototype_findComponent = function( selector ) {
+		return this.fragment.findComponent( selector );
+	};
+
+	var Ractive_prototype_fire = function( eventName ) {
+		var args, i, len, subscribers = this._subs[ eventName ];
+		if ( !subscribers ) {
+			return;
+		}
+		args = Array.prototype.slice.call( arguments, 1 );
+		for ( i = 0, len = subscribers.length; i < len; i += 1 ) {
+			subscribers[ i ].apply( this, args );
+		}
+	};
+
+	var shared_get_UnresolvedImplicitDependency = function( circular, removeFromArray, runloop, notifyDependants ) {
+
+		var get, empty = {};
+		circular.push( function() {
+			get = circular.get;
+		} );
+		var UnresolvedImplicitDependency = function( ractive, keypath ) {
+			this.root = ractive;
+			this.ref = keypath;
+			this.parentFragment = empty;
+			ractive._unresolvedImplicitDependencies[ keypath ] = true;
+			ractive._unresolvedImplicitDependencies.push( this );
+			runloop.addUnresolved( this );
+		};
+		UnresolvedImplicitDependency.prototype = {
+			resolve: function() {
+				var ractive = this.root;
+				notifyDependants( ractive, this.ref );
+				ractive._unresolvedImplicitDependencies[ this.ref ] = false;
+				removeFromArray( ractive._unresolvedImplicitDependencies, this );
+			},
+			teardown: function() {
+				runloop.removeUnresolved( this );
+			}
+		};
+		return UnresolvedImplicitDependency;
+	}( circular, utils_removeFromArray, global_runloop, shared_notifyDependants );
+
+	var Ractive_prototype_get = function( normaliseKeypath, get, UnresolvedImplicitDependency ) {
+
+		var options = {
+			isTopLevel: true
+		};
+		return function Ractive_prototype_get( keypath ) {
+			var value;
+			keypath = normaliseKeypath( keypath );
+			value = get( this, keypath, options );
+			if ( this._captured && !this._captured[ keypath ] ) {
+				this._captured.push( keypath );
+				this._captured[ keypath ] = true;
+				if ( value === undefined && !this._unresolvedImplicitDependencies[ keypath ] ) {
+					new UnresolvedImplicitDependency( this, keypath );
+				}
+			}
+			return value;
+		};
+	}( utils_normaliseKeypath, shared_get__get, shared_get_UnresolvedImplicitDependency );
+
+	var utils_getElement = function( input ) {
+		var output;
+		if ( typeof window === 'undefined' || !document || !input ) {
+			return null;
+		}
+		if ( input.nodeType ) {
+			return input;
+		}
+		if ( typeof input === 'string' ) {
+			output = document.getElementById( input );
+			if ( !output && document.querySelector ) {
+				output = document.querySelector( input );
+			}
+			if ( output && output.nodeType ) {
+				return output;
+			}
+		}
+		if ( input[ 0 ] && input[ 0 ].nodeType ) {
+			return input[ 0 ];
+		}
+		return null;
+	};
+
+	var Ractive_prototype_insert = function( getElement ) {
+
+		return function( target, anchor ) {
+			target = getElement( target );
+			anchor = getElement( anchor ) || null;
+			if ( !target ) {
+				throw new Error( 'You must specify a valid target to insert into' );
+			}
+			target.insertBefore( this.detach(), anchor );
+			this.fragment.pNode = this.el = target;
+		};
+	}( utils_getElement );
+
+	var Ractive_prototype_merge_mapOldToNewIndex = function( oldArray, newArray ) {
+		var usedIndices, mapper, firstUnusedIndex, newIndices, changed;
+		usedIndices = {};
+		firstUnusedIndex = 0;
+		mapper = function( item, i ) {
+			var index, start, len;
+			start = firstUnusedIndex;
+			len = newArray.length;
+			do {
+				index = newArray.indexOf( item, start );
+				if ( index === -1 ) {
+					changed = true;
+					return -1;
+				}
+				start = index + 1;
+			} while ( usedIndices[ index ] && start < len );
+			if ( index === firstUnusedIndex ) {
+				firstUnusedIndex += 1;
+			}
+			if ( index !== i ) {
+				changed = true;
+			}
+			usedIndices[ index ] = true;
+			return index;
+		};
+		newIndices = oldArray.map( mapper );
+		newIndices.unchanged = !changed;
+		return newIndices;
+	};
+
+	var Ractive_prototype_merge_queueDependants = function( types ) {
+
+		return function queueDependants( keypath, deps, mergeQueue, updateQueue ) {
+			var i, dependant;
+			i = deps.length;
+			while ( i-- ) {
+				dependant = deps[ i ];
+				if ( dependant.type === types.REFERENCE ) {
+					dependant.update();
+				} else if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
+					mergeQueue.push( dependant );
+				} else {
+					updateQueue.push( dependant );
+				}
+			}
+		};
+	}( config_types );
+
+	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, Promise, clearCache, makeTransitionManager, notifyDependants, replaceData, mapOldToNewIndex, queueDependants ) {
+
+		var identifiers = {};
+		return function merge( keypath, array, options ) {
+			var currentArray, oldArray, newArray, identifier, lengthUnchanged, i, newIndices, mergeQueue, updateQueue, depsByKeypath, deps, promise, fulfilPromise, transitionManager, upstreamQueue, keys;
+			currentArray = this.get( keypath );
+			if ( !isArray( currentArray ) || !isArray( array ) ) {
+				return this.set( keypath, array, options && options.complete );
+			}
+			lengthUnchanged = currentArray.length === array.length;
+			if ( options && options.compare ) {
+				if ( options.compare === true ) {
+					identifier = stringify;
+				} else if ( typeof options.compare === 'string' ) {
+					identifier = getIdentifier( options.compare );
+				} else if ( typeof options.compare == 'function' ) {
+					identifier = options.compare;
+				} else {
+					throw new Error( 'The `compare` option must be a function, or a string representing an identifying field (or `true` to use JSON.stringify)' );
+				}
+				try {
+					oldArray = currentArray.map( identifier );
+					newArray = array.map( identifier );
+				} catch ( err ) {
+					if ( this.debug ) {
+						throw err;
+					} else {
+						warn( 'Merge operation: comparison failed. Falling back to identity checking' );
+					}
+					oldArray = currentArray;
+					newArray = array;
+				}
+			} else {
+				oldArray = currentArray;
+				newArray = array;
+			}
+			newIndices = mapOldToNewIndex( oldArray, newArray );
+			replaceData( this, keypath, array );
+			if ( newIndices.unchanged && lengthUnchanged ) {
+				return Promise.resolve();
+			}
+			runloop.start( this );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
+			if ( options && options.complete ) {
+				promise.then( options.complete );
+			}
+			mergeQueue = [];
+			updateQueue = [];
+			for ( i = 0; i < this._deps.length; i += 1 ) {
+				depsByKeypath = this._deps[ i ];
+				if ( !depsByKeypath ) {
+					continue;
+				}
+				deps = depsByKeypath[ keypath ];
+				if ( deps ) {
+					queueDependants( keypath, deps, mergeQueue, updateQueue );
+					while ( mergeQueue.length ) {
+						mergeQueue.pop().merge( newIndices );
+					}
+					while ( updateQueue.length ) {
+						updateQueue.pop().update();
+					}
+				}
+			}
+			upstreamQueue = [];
+			keys = keypath.split( '.' );
+			while ( keys.length ) {
+				keys.pop();
+				upstreamQueue.push( keys.join( '.' ) );
+			}
+			notifyDependants.multiple( this, upstreamQueue, true );
+			if ( oldArray.length !== newArray.length ) {
+				notifyDependants( this, keypath + '.length', true );
+			}
+			runloop.end();
+			transitionManager.init();
+			return promise;
+		};
+
+		function stringify( item ) {
+			return JSON.stringify( item );
+		}
+
+		function getIdentifier( str ) {
+			if ( !identifiers[ str ] ) {
+				identifiers[ str ] = function( item ) {
+					return item[ str ];
+				};
+			}
+			return identifiers[ str ];
+		}
+	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, Ractive_prototype_shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
 
 	var Ractive_prototype_observe_Observer = function( runloop, isEqual, get ) {
 
@@ -3018,296 +3298,55 @@
 		};
 	}( utils_isObject, Ractive_prototype_observe_getObserverFacade );
 
-	var Ractive_prototype_fire = function( eventName ) {
-		var args, i, len, subscribers = this._subs[ eventName ];
-		if ( !subscribers ) {
-			return;
+	var Ractive_prototype_off = function( eventName, callback ) {
+		var subscribers, index;
+		if ( !callback ) {
+			if ( !eventName ) {
+				for ( eventName in this._subs ) {
+					delete this._subs[ eventName ];
+				}
+			} else {
+				this._subs[ eventName ] = [];
+			}
 		}
-		args = Array.prototype.slice.call( arguments, 1 );
-		for ( i = 0, len = subscribers.length; i < len; i += 1 ) {
-			subscribers[ i ].apply( this, args );
+		subscribers = this._subs[ eventName ];
+		if ( subscribers ) {
+			index = subscribers.indexOf( callback );
+			if ( index !== -1 ) {
+				subscribers.splice( index, 1 );
+			}
 		}
 	};
 
-	var Ractive_prototype_find = function( selector ) {
-		if ( !this.el ) {
-			return null;
-		}
-		return this.fragment.find( selector );
-	};
-
-	var utils_matches = function( isClient, vendors, createElement ) {
-
-		var div, methodNames, unprefixed, prefixed, i, j, makeFunction;
-		if ( !isClient ) {
-			return;
-		}
-		div = createElement( 'div' );
-		methodNames = [
-			'matches',
-			'matchesSelector'
-		];
-		makeFunction = function( methodName ) {
-			return function( node, selector ) {
-				return node[ methodName ]( selector );
+	var Ractive_prototype_on = function( eventName, callback ) {
+		var self = this,
+			listeners, n;
+		if ( typeof eventName === 'object' ) {
+			listeners = [];
+			for ( n in eventName ) {
+				if ( eventName.hasOwnProperty( n ) ) {
+					listeners.push( this.on( n, eventName[ n ] ) );
+				}
+			}
+			return {
+				cancel: function() {
+					var listener;
+					while ( listener = listeners.pop() ) {
+						listener.cancel();
+					}
+				}
 			};
-		};
-		i = methodNames.length;
-		while ( i-- ) {
-			unprefixed = methodNames[ i ];
-			if ( div[ unprefixed ] ) {
-				return makeFunction( unprefixed );
-			}
-			j = vendors.length;
-			while ( j-- ) {
-				prefixed = vendors[ i ] + unprefixed.substr( 0, 1 ).toUpperCase() + unprefixed.substring( 1 );
-				if ( div[ prefixed ] ) {
-					return makeFunction( prefixed );
-				}
-			}
 		}
-		return function( node, selector ) {
-			var nodes, i;
-			nodes = ( node.parentNode || node.document ).querySelectorAll( selector );
-			i = nodes.length;
-			while ( i-- ) {
-				if ( nodes[ i ] === node ) {
-					return true;
-				}
-			}
-			return false;
-		};
-	}( config_isClient, config_vendors, utils_createElement );
-
-	var Ractive_prototype_shared_makeQuery_test = function( matches ) {
-
-		return function( item, noDirty ) {
-			var itemMatches = this._isComponentQuery ? !this.selector || item.name === this.selector : matches( item.node, this.selector );
-			if ( itemMatches ) {
-				this.push( item.node || item.instance );
-				if ( !noDirty ) {
-					this._makeDirty();
-				}
-				return true;
-			}
-		};
-	}( utils_matches );
-
-	var Ractive_prototype_shared_makeQuery_cancel = function() {
-		var liveQueries, selector, index;
-		liveQueries = this._root[ this._isComponentQuery ? 'liveComponentQueries' : 'liveQueries' ];
-		selector = this.selector;
-		index = liveQueries.indexOf( selector );
-		if ( index !== -1 ) {
-			liveQueries.splice( index, 1 );
-			liveQueries[ selector ] = null;
+		if ( !this._subs[ eventName ] ) {
+			this._subs[ eventName ] = [ callback ];
+		} else {
+			this._subs[ eventName ].push( callback );
 		}
-	};
-
-	var Ractive_prototype_shared_makeQuery_sortByItemPosition = function() {
-
-		return function( a, b ) {
-			var ancestryA, ancestryB, oldestA, oldestB, mutualAncestor, indexA, indexB, fragments, fragmentA, fragmentB;
-			ancestryA = getAncestry( a.component || a._ractive.proxy );
-			ancestryB = getAncestry( b.component || b._ractive.proxy );
-			oldestA = ancestryA[ ancestryA.length - 1 ];
-			oldestB = ancestryB[ ancestryB.length - 1 ];
-			while ( oldestA && oldestA === oldestB ) {
-				ancestryA.pop();
-				ancestryB.pop();
-				mutualAncestor = oldestA;
-				oldestA = ancestryA[ ancestryA.length - 1 ];
-				oldestB = ancestryB[ ancestryB.length - 1 ];
-			}
-			oldestA = oldestA.component || oldestA;
-			oldestB = oldestB.component || oldestB;
-			fragmentA = oldestA.parentFragment;
-			fragmentB = oldestB.parentFragment;
-			if ( fragmentA === fragmentB ) {
-				indexA = fragmentA.items.indexOf( oldestA );
-				indexB = fragmentB.items.indexOf( oldestB );
-				return indexA - indexB || ancestryA.length - ancestryB.length;
-			}
-			if ( fragments = mutualAncestor.fragments ) {
-				indexA = fragments.indexOf( fragmentA );
-				indexB = fragments.indexOf( fragmentB );
-				return indexA - indexB || ancestryA.length - ancestryB.length;
-			}
-			throw new Error( 'An unexpected condition was met while comparing the position of two components. Please file an issue at https://github.com/RactiveJS/Ractive/issues - thanks!' );
-		};
-
-		function getParent( item ) {
-			var parentFragment;
-			if ( parentFragment = item.parentFragment ) {
-				return parentFragment.owner;
-			}
-			if ( item.component && ( parentFragment = item.component.parentFragment ) ) {
-				return parentFragment.owner;
-			}
-		}
-
-		function getAncestry( item ) {
-			var ancestry, ancestor;
-			ancestry = [ item ];
-			ancestor = getParent( item );
-			while ( ancestor ) {
-				ancestry.push( ancestor );
-				ancestor = getParent( ancestor );
-			}
-			return ancestry;
-		}
-	}();
-
-	var Ractive_prototype_shared_makeQuery_sortByDocumentPosition = function( sortByItemPosition ) {
-
-		return function( node, otherNode ) {
-			var bitmask;
-			if ( node.compareDocumentPosition ) {
-				bitmask = node.compareDocumentPosition( otherNode );
-				return bitmask & 2 ? 1 : -1;
-			}
-			return sortByItemPosition( node, otherNode );
-		};
-	}( Ractive_prototype_shared_makeQuery_sortByItemPosition );
-
-	var Ractive_prototype_shared_makeQuery_sort = function( sortByDocumentPosition, sortByItemPosition ) {
-
-		return function() {
-			this.sort( this._isComponentQuery ? sortByItemPosition : sortByDocumentPosition );
-			this._dirty = false;
-		};
-	}( Ractive_prototype_shared_makeQuery_sortByDocumentPosition, Ractive_prototype_shared_makeQuery_sortByItemPosition );
-
-	var Ractive_prototype_shared_makeQuery_dirty = function( runloop ) {
-
-		return function() {
-			if ( !this._dirty ) {
-				runloop.addLiveQuery( this );
-				this._dirty = true;
+		return {
+			cancel: function() {
+				self.off( eventName, callback );
 			}
 		};
-	}( global_runloop );
-
-	var Ractive_prototype_shared_makeQuery_remove = function( nodeOrComponent ) {
-		var index = this.indexOf( this._isComponentQuery ? nodeOrComponent.instance : nodeOrComponent );
-		if ( index !== -1 ) {
-			this.splice( index, 1 );
-		}
-	};
-
-	var Ractive_prototype_shared_makeQuery__makeQuery = function( defineProperties, test, cancel, sort, dirty, remove ) {
-
-		return function( ractive, selector, live, isComponentQuery ) {
-			var query;
-			query = [];
-			defineProperties( query, {
-				selector: {
-					value: selector
-				},
-				live: {
-					value: live
-				},
-				_isComponentQuery: {
-					value: isComponentQuery
-				},
-				_test: {
-					value: test
-				}
-			} );
-			if ( !live ) {
-				return query;
-			}
-			defineProperties( query, {
-				cancel: {
-					value: cancel
-				},
-				_root: {
-					value: ractive
-				},
-				_sort: {
-					value: sort
-				},
-				_makeDirty: {
-					value: dirty
-				},
-				_remove: {
-					value: remove
-				},
-				_dirty: {
-					value: false,
-					writable: true
-				}
-			} );
-			return query;
-		};
-	}( utils_defineProperties, Ractive_prototype_shared_makeQuery_test, Ractive_prototype_shared_makeQuery_cancel, Ractive_prototype_shared_makeQuery_sort, Ractive_prototype_shared_makeQuery_dirty, Ractive_prototype_shared_makeQuery_remove );
-
-	var Ractive_prototype_findAll = function( warn, matches, defineProperties, makeQuery ) {
-
-		return function( selector, options ) {
-			var liveQueries, query;
-			if ( !this.el ) {
-				return [];
-			}
-			options = options || {};
-			liveQueries = this._liveQueries;
-			if ( query = liveQueries[ selector ] ) {
-				return options && options.live ? query : query.slice();
-			}
-			query = makeQuery( this, selector, !! options.live, false );
-			if ( query.live ) {
-				liveQueries.push( selector );
-				liveQueries[ selector ] = query;
-			}
-			this.fragment.findAll( selector, query );
-			return query;
-		};
-	}( utils_warn, utils_matches, utils_defineProperties, Ractive_prototype_shared_makeQuery__makeQuery );
-
-	var Ractive_prototype_findComponent = function( selector ) {
-		return this.fragment.findComponent( selector );
-	};
-
-	var Ractive_prototype_findAllComponents = function( warn, matches, defineProperties, makeQuery ) {
-
-		return function( selector, options ) {
-			var liveQueries, query;
-			options = options || {};
-			liveQueries = this._liveComponentQueries;
-			if ( query = liveQueries[ selector ] ) {
-				return options && options.live ? query : query.slice();
-			}
-			query = makeQuery( this, selector, !! options.live, true );
-			if ( query.live ) {
-				liveQueries.push( selector );
-				liveQueries[ selector ] = query;
-			}
-			this.fragment.findAllComponents( selector, query );
-			return query;
-		};
-	}( utils_warn, utils_matches, utils_defineProperties, Ractive_prototype_shared_makeQuery__makeQuery );
-
-	var utils_getElement = function( input ) {
-		var output;
-		if ( typeof window === 'undefined' || !document || !input ) {
-			return null;
-		}
-		if ( input.nodeType ) {
-			return input;
-		}
-		if ( typeof input === 'string' ) {
-			output = document.getElementById( input );
-			if ( !output && document.querySelector ) {
-				output = document.querySelector( input );
-			}
-			if ( output && output.nodeType ) {
-				return output;
-			}
-		}
-		if ( input[ 0 ] && input[ 0 ].nodeType ) {
-			return input[ 0 ];
-		}
-		return null;
 	};
 
 	var render_shared_initFragment = function( types, create ) {
@@ -4673,6 +4712,26 @@
 			return item;
 		};
 	}( config_types );
+
+	var utils_arrayContentsMatch = function( isArray ) {
+
+		return function( a, b ) {
+			var i;
+			if ( !isArray( a ) || !isArray( b ) ) {
+				return false;
+			}
+			if ( a.length !== b.length ) {
+				return false;
+			}
+			i = a.length;
+			while ( i-- ) {
+				if ( a[ i ] !== b[ i ] ) {
+					return false;
+				}
+			}
+			return true;
+		};
+	}( utils_isArray );
 
 	var render_DomFragment_Attribute_prototype_bind = function( runloop, types, warn, arrayContentsMatch, getValueFromCheckboxes, get, set ) {
 
@@ -7731,9 +7790,86 @@
 		};
 	}( utils_warn );
 
-	var Ractive_prototype_toHTML = function() {
-		return this.fragment.toString();
-	};
+	var Ractive_prototype_reset = function( Promise, runloop, makeTransitionManager, clearCache, notifyDependants ) {
+
+		return function( data, callback ) {
+			var promise, fulfilPromise, transitionManager, wrapper;
+			if ( typeof data === 'function' ) {
+				callback = data;
+				data = {};
+			} else {
+				data = data || {};
+			}
+			if ( typeof data !== 'object' ) {
+				throw new Error( 'The reset method takes either no arguments, or an object containing new data' );
+			}
+			runloop.start( this );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
+			if ( callback ) {
+				promise.then( callback );
+			}
+			if ( ( wrapper = this._wrapped[ '' ] ) && wrapper.reset ) {
+				if ( wrapper.reset( data ) === false ) {
+					this.data = data;
+				}
+			} else {
+				this.data = data;
+			}
+			clearCache( this, '' );
+			notifyDependants( this, '' );
+			runloop.end();
+			transitionManager.init();
+			this.fire( 'reset', data );
+			return promise;
+		};
+	}( utils_Promise, global_runloop, shared_makeTransitionManager, shared_clearCache, shared_notifyDependants );
+
+	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, Promise, get, set, clearCache, notifyDependants, makeTransitionManager ) {
+
+		return function Ractive_prototype_set( keypath, value, callback ) {
+			var map, changes, promise, fulfilPromise, transitionManager;
+			changes = [];
+			runloop.start( this );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
+			if ( isObject( keypath ) ) {
+				map = keypath;
+				callback = value;
+				for ( keypath in map ) {
+					if ( map.hasOwnProperty( keypath ) ) {
+						value = map[ keypath ];
+						keypath = normaliseKeypath( keypath );
+						if ( set( this, keypath, value ) ) {
+							changes.push( keypath );
+						}
+					}
+				}
+			} else {
+				keypath = normaliseKeypath( keypath );
+				if ( set( this, keypath, value ) ) {
+					changes.push( keypath );
+				}
+			}
+			runloop.end();
+			transitionManager.init();
+			if ( callback ) {
+				promise.then( callback.bind( this ) );
+			}
+			return promise;
+		};
+	}( global_runloop, utils_isObject, utils_isEqual, utils_normaliseKeypath, utils_Promise, shared_get__get, shared_set, shared_clearCache, shared_notifyDependants, shared_makeTransitionManager );
+
+	var Ractive_prototype_subtract = function( add ) {
+
+		return function( keypath, d ) {
+			return add( this, keypath, d === undefined ? -1 : -d );
+		};
+	}( Ractive_prototype_shared_add );
 
 	// Teardown. This goes through the root fragment and all its children, removing observers
 	// and generally cleaning up after itself
@@ -7790,34 +7926,9 @@
 		};
 	}( config_types, utils_Promise, shared_makeTransitionManager, shared_clearCache, global_css );
 
-	var Ractive_prototype_shared_add = function( isNumeric ) {
-
-		return function( root, keypath, d ) {
-			var value;
-			if ( typeof keypath !== 'string' || !isNumeric( d ) ) {
-				throw new Error( 'Bad arguments' );
-			}
-			value = +root.get( keypath ) || 0;
-			if ( !isNumeric( value ) ) {
-				throw new Error( 'Cannot add to a non-numeric value' );
-			}
-			return root.set( keypath, value + d );
-		};
-	}( utils_isNumeric );
-
-	var Ractive_prototype_add = function( add ) {
-
-		return function( keypath, d ) {
-			return add( this, keypath, d === undefined ? 1 : +d );
-		};
-	}( Ractive_prototype_shared_add );
-
-	var Ractive_prototype_subtract = function( add ) {
-
-		return function( keypath, d ) {
-			return add( this, keypath, d === undefined ? -1 : -d );
-		};
-	}( Ractive_prototype_shared_add );
+	var Ractive_prototype_toHTML = function() {
+		return this.fragment.toString();
+	};
 
 	var Ractive_prototype_toggle = function( keypath, callback ) {
 		var value;
@@ -7831,195 +7942,122 @@
 		return this.set( keypath, !value, callback );
 	};
 
-	var Ractive_prototype_merge_mapOldToNewIndex = function( oldArray, newArray ) {
-		var usedIndices, mapper, firstUnusedIndex, newIndices, changed;
-		usedIndices = {};
-		firstUnusedIndex = 0;
-		mapper = function( item, i ) {
-			var index, start, len;
-			start = firstUnusedIndex;
-			len = newArray.length;
-			do {
-				index = newArray.indexOf( item, start );
-				if ( index === -1 ) {
-					changed = true;
-					return -1;
-				}
-				start = index + 1;
-			} while ( usedIndices[ index ] && start < len );
-			if ( index === firstUnusedIndex ) {
-				firstUnusedIndex += 1;
-			}
-			if ( index !== i ) {
-				changed = true;
-			}
-			usedIndices[ index ] = true;
-			return index;
-		};
-		newIndices = oldArray.map( mapper );
-		newIndices.unchanged = !changed;
-		return newIndices;
-	};
+	var Ractive_prototype_update = function( runloop, Promise, makeTransitionManager, clearCache, notifyDependants ) {
 
-	var Ractive_prototype_merge_queueDependants = function( types ) {
-
-		return function queueDependants( keypath, deps, mergeQueue, updateQueue ) {
-			var i, dependant;
-			i = deps.length;
-			while ( i-- ) {
-				dependant = deps[ i ];
-				if ( dependant.type === types.REFERENCE ) {
-					dependant.update();
-				} else if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
-					mergeQueue.push( dependant );
-				} else {
-					updateQueue.push( dependant );
-				}
-			}
-		};
-	}( config_types );
-
-	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, Promise, clearCache, makeTransitionManager, notifyDependants, replaceData, mapOldToNewIndex, queueDependants ) {
-
-		var identifiers = {};
-		return function merge( keypath, array, options ) {
-			var currentArray, oldArray, newArray, identifier, lengthUnchanged, i, newIndices, mergeQueue, updateQueue, depsByKeypath, deps, promise, fulfilPromise, transitionManager, upstreamQueue, keys;
-			currentArray = this.get( keypath );
-			if ( !isArray( currentArray ) || !isArray( array ) ) {
-				return this.set( keypath, array, options && options.complete );
-			}
-			lengthUnchanged = currentArray.length === array.length;
-			if ( options && options.compare ) {
-				if ( options.compare === true ) {
-					identifier = stringify;
-				} else if ( typeof options.compare === 'string' ) {
-					identifier = getIdentifier( options.compare );
-				} else if ( typeof options.compare == 'function' ) {
-					identifier = options.compare;
-				} else {
-					throw new Error( 'The `compare` option must be a function, or a string representing an identifying field (or `true` to use JSON.stringify)' );
-				}
-				try {
-					oldArray = currentArray.map( identifier );
-					newArray = array.map( identifier );
-				} catch ( err ) {
-					if ( this.debug ) {
-						throw err;
-					} else {
-						warn( 'Merge operation: comparison failed. Falling back to identity checking' );
-					}
-					oldArray = currentArray;
-					newArray = array;
-				}
-			} else {
-				oldArray = currentArray;
-				newArray = array;
-			}
-			newIndices = mapOldToNewIndex( oldArray, newArray );
-			replaceData( this, keypath, array );
-			if ( newIndices.unchanged && lengthUnchanged ) {
-				return Promise.resolve();
-			}
+		return function( keypath, callback ) {
+			var promise, fulfilPromise, transitionManager;
 			runloop.start( this );
+			if ( typeof keypath === 'function' ) {
+				callback = keypath;
+				keypath = '';
+			}
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
 			} );
 			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
-			if ( options && options.complete ) {
-				promise.then( options.complete );
-			}
-			mergeQueue = [];
-			updateQueue = [];
-			for ( i = 0; i < this._deps.length; i += 1 ) {
-				depsByKeypath = this._deps[ i ];
-				if ( !depsByKeypath ) {
-					continue;
-				}
-				deps = depsByKeypath[ keypath ];
-				if ( deps ) {
-					queueDependants( keypath, deps, mergeQueue, updateQueue );
-					while ( mergeQueue.length ) {
-						mergeQueue.pop().merge( newIndices );
-					}
-					while ( updateQueue.length ) {
-						updateQueue.pop().update();
-					}
-				}
-			}
-			upstreamQueue = [];
-			keys = keypath.split( '.' );
-			while ( keys.length ) {
-				keys.pop();
-				upstreamQueue.push( keys.join( '.' ) );
-			}
-			notifyDependants.multiple( this, upstreamQueue, true );
-			if ( oldArray.length !== newArray.length ) {
-				notifyDependants( this, keypath + '.length', true );
-			}
+			clearCache( this, keypath || '' );
+			notifyDependants( this, keypath || '' );
 			runloop.end();
 			transitionManager.init();
+			if ( typeof keypath === 'string' ) {
+				this.fire( 'update', keypath );
+			} else {
+				this.fire( 'update' );
+			}
+			if ( callback ) {
+				promise.then( callback.bind( this ) );
+			}
 			return promise;
 		};
+	}( global_runloop, utils_Promise, shared_makeTransitionManager, shared_clearCache, shared_notifyDependants );
 
-		function stringify( item ) {
-			return JSON.stringify( item );
-		}
+	var Ractive_prototype_updateModel = function( getValueFromCheckboxes, arrayContentsMatch, isEqual ) {
 
-		function getIdentifier( str ) {
-			if ( !identifiers[ str ] ) {
-				identifiers[ str ] = function( item ) {
-					return item[ str ];
-				};
+		return function Ractive_prototype_updateModel( keypath, cascade ) {
+			var values, deferredCheckboxes, i;
+			if ( typeof keypath !== 'string' ) {
+				keypath = '';
+				cascade = true;
 			}
-			return identifiers[ str ];
-		}
-	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, Ractive_prototype_shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
-
-	var Ractive_prototype_detach = function() {
-		return this.fragment.detach();
-	};
-
-	var Ractive_prototype_insert = function( getElement ) {
-
-		return function( target, anchor ) {
-			target = getElement( target );
-			anchor = getElement( anchor ) || null;
-			if ( !target ) {
-				throw new Error( 'You must specify a valid target to insert into' );
+			consolidateChangedValues( this, keypath, values = {}, deferredCheckboxes = [], cascade );
+			if ( i = deferredCheckboxes.length ) {
+				while ( i-- ) {
+					keypath = deferredCheckboxes[ i ];
+					values[ keypath ] = getValueFromCheckboxes( this, keypath );
+				}
 			}
-			target.insertBefore( this.detach(), anchor );
-			this.fragment.pNode = this.el = target;
+			this.set( values );
 		};
-	}( utils_getElement );
 
-	var Ractive_prototype__prototype = function( get, set, update, updateModel, animate, on, off, observe, fire, find, findAll, findComponent, findAllComponents, render, renderHTML, toHTML, teardown, add, subtract, toggle, merge, detach, insert ) {
+		function consolidateChangedValues( ractive, keypath, values, deferredCheckboxes, cascade ) {
+			var bindings, childDeps, i, binding, oldValue, newValue;
+			bindings = ractive._twowayBindings[ keypath ];
+			if ( bindings ) {
+				i = bindings.length;
+				while ( i-- ) {
+					binding = bindings[ i ];
+					if ( binding.radioName && !binding.node.checked ) {
+						continue;
+					}
+					if ( binding.checkboxName ) {
+						if ( binding.changed() && !deferredCheckboxes[ keypath ] ) {
+							deferredCheckboxes[ keypath ] = true;
+							deferredCheckboxes.push( keypath );
+						}
+						continue;
+					}
+					oldValue = binding.attr.value;
+					newValue = binding.value();
+					if ( arrayContentsMatch( oldValue, newValue ) ) {
+						continue;
+					}
+					if ( !isEqual( oldValue, newValue ) ) {
+						values[ keypath ] = newValue;
+					}
+				}
+			}
+			if ( !cascade ) {
+				return;
+			}
+			childDeps = ractive._depsMap[ keypath ];
+			if ( childDeps ) {
+				i = childDeps.length;
+				while ( i-- ) {
+					consolidateChangedValues( ractive, childDeps[ i ], values, deferredCheckboxes, cascade );
+				}
+			}
+		}
+	}( shared_getValueFromCheckboxes, utils_arrayContentsMatch, utils_isEqual );
+
+	var Ractive_prototype__prototype = function( add, animate, detach, find, findAll, findAllComponents, findComponent, fire, get, insert, merge, observe, off, on, render, renderHTML, reset, set, subtract, teardown, toHTML, toggle, update, updateModel ) {
 
 		return {
-			get: get,
-			set: set,
-			update: update,
-			updateModel: updateModel,
+			add: add,
 			animate: animate,
-			on: on,
-			off: off,
-			observe: observe,
-			fire: fire,
+			detach: detach,
 			find: find,
 			findAll: findAll,
-			findComponent: findComponent,
 			findAllComponents: findAllComponents,
-			renderHTML: renderHTML,
-			toHTML: toHTML,
-			render: render,
-			teardown: teardown,
-			add: add,
-			subtract: subtract,
-			toggle: toggle,
+			findComponent: findComponent,
+			fire: fire,
+			get: get,
+			insert: insert,
 			merge: merge,
-			detach: detach,
-			insert: insert
+			observe: observe,
+			off: off,
+			on: on,
+			render: render,
+			renderHTML: renderHTML,
+			reset: reset,
+			set: set,
+			subtract: subtract,
+			teardown: teardown,
+			toHTML: toHTML,
+			toggle: toggle,
+			update: update,
+			updateModel: updateModel
 		};
-	}( Ractive_prototype_get, Ractive_prototype_set, Ractive_prototype_update, Ractive_prototype_updateModel, Ractive_prototype_animate__animate, Ractive_prototype_on, Ractive_prototype_off, Ractive_prototype_observe__observe, Ractive_prototype_fire, Ractive_prototype_find, Ractive_prototype_findAll, Ractive_prototype_findComponent, Ractive_prototype_findAllComponents, Ractive_prototype_render, Ractive_prototype_renderHTML, Ractive_prototype_toHTML, Ractive_prototype_teardown, Ractive_prototype_add, Ractive_prototype_subtract, Ractive_prototype_toggle, Ractive_prototype_merge__merge, Ractive_prototype_detach, Ractive_prototype_insert );
+	}( Ractive_prototype_add, Ractive_prototype_animate__animate, Ractive_prototype_detach, Ractive_prototype_find, Ractive_prototype_findAll, Ractive_prototype_findAllComponents, Ractive_prototype_findComponent, Ractive_prototype_fire, Ractive_prototype_get, Ractive_prototype_insert, Ractive_prototype_merge__merge, Ractive_prototype_observe__observe, Ractive_prototype_off, Ractive_prototype_on, Ractive_prototype_render, Ractive_prototype_renderHTML, Ractive_prototype_reset, Ractive_prototype_set, Ractive_prototype_subtract, Ractive_prototype_teardown, Ractive_prototype_toHTML, Ractive_prototype_toggle, Ractive_prototype_update, Ractive_prototype_updateModel );
 
 	var registries_components = {};
 
