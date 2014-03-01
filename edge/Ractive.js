@@ -1417,7 +1417,7 @@
 				if ( isArray( parentValue ) && /^[0-9]+$/.test( key ) ) {
 					return false;
 				}
-				return parentValue && typeof parentValue === 'object';
+				return parentValue && ( typeof parentValue === 'object' || typeof parentValue === 'function' );
 			},
 			wrap: function( ractive, property, keypath ) {
 				return new MagicWrapper( ractive, property, keypath );
@@ -1495,10 +1495,11 @@
 				this.obj[ this.prop ] = value;
 				return false;
 			},
-			set: function( keypath ) {
+			set: function( key, value ) {
 				if ( !this.obj[ this.prop ] ) {
 					this.resetting = true;
-					this.obj[ this.prop ] = createBranch( keypath.split( '.' )[ 0 ] );
+					this.obj[ this.prop ] = createBranch( key );
+					this.obj[ this.prop ][ key ] = value;
 					this.resetting = false;
 				}
 			},
