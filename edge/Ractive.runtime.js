@@ -1499,9 +1499,9 @@
 				if ( !this.obj[ this.prop ] ) {
 					this.resetting = true;
 					this.obj[ this.prop ] = createBranch( key );
-					this.obj[ this.prop ][ key ] = value;
 					this.resetting = false;
 				}
+				this.obj[ this.prop ][ key ] = value;
 			},
 			teardown: function() {
 				var descriptor, set, value, wrappers, index;
@@ -1772,7 +1772,7 @@
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
 
-	var Ractive_prototype_shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
+	var shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
 
 		return function( ractive, keypath, value ) {
 			var keys, accumulated, wrapped, obj, key, currentKeypath, keypathToClear;
@@ -1853,7 +1853,7 @@
 			replaceData( child, childKeypath, value );
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
-	}( circular, global_runloop, shared_createComponentBinding, Ractive_prototype_shared_replaceData );
+	}( circular, global_runloop, shared_createComponentBinding, shared_replaceData );
 
 	var shared_get_FAILED_LOOKUP = {
 		FAILED_LOOKUP: true
@@ -2088,7 +2088,7 @@
 		}
 		circular.set = set;
 		return set;
-	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, Ractive_prototype_shared_replaceData );
+	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, shared_replaceData );
 
 	var Ractive_prototype_animate_Animation = function( warn, runloop, interpolate, set ) {
 
@@ -2705,7 +2705,7 @@
 					identifier = stringify;
 				} else if ( typeof options.compare === 'string' ) {
 					identifier = getIdentifier( options.compare );
-				} else if ( typeof options.compare == 'function' ) {
+				} else if ( typeof options.compare === 'function' ) {
 					identifier = options.compare;
 				} else {
 					throw new Error( 'The `compare` option must be a function, or a string representing an identifying field (or `true` to use JSON.stringify)' );
@@ -2784,7 +2784,7 @@
 			}
 			return identifiers[ str ];
 		}
-	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, Ractive_prototype_shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
+	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
 
 	var Ractive_prototype_observe_Observer = function( runloop, isEqual, get ) {
 
