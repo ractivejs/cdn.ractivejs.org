@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre1 - 2014-02-28
+	Ractive - v0.4.0-pre1 - 2014-03-01
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1752,6 +1752,9 @@
 						}
 					} );
 					return promise2;
+				},
+				catch: function( onRejected ) {
+					return this.then( null, onRejected );
 				}
 			};
 		};
@@ -1775,6 +1778,16 @@
 				while ( i-- ) {
 					processPromise( i );
 				}
+			} );
+		};
+		Promise.resolve = function( value ) {
+			return new Promise( function( fulfil ) {
+				fulfil( value );
+			} );
+		};
+		Promise.reject = function( reason ) {
+			return new Promise( function( fulfil, reject ) {
+				reject( reason );
 			} );
 		};
 		return Promise;
@@ -9788,40 +9801,31 @@
 		return function( root, keypath, d ) {
 			var value;
 			if ( typeof keypath !== 'string' || !isNumeric( d ) ) {
-				if ( root.debug ) {
-					throw new Error( 'Bad arguments' );
-				}
-				return;
+				throw new Error( 'Bad arguments' );
 			}
-			value = root.get( keypath );
-			if ( value === undefined ) {
-				value = 0;
-			}
+			value = +root.get( keypath ) || 0;
 			if ( !isNumeric( value ) ) {
-				if ( root.debug ) {
-					throw new Error( 'Cannot add to a non-numeric value' );
-				}
-				return;
+				throw new Error( 'Cannot add to a non-numeric value' );
 			}
-			root.set( keypath, value + d );
+			return root.set( keypath, value + d );
 		};
 	}( utils_isNumeric );
 
 	var Ractive_prototype_add = function( add ) {
 
 		return function( keypath, d ) {
-			add( this, keypath, d === undefined ? 1 : d );
+			return add( this, keypath, d === undefined ? 1 : +d );
 		};
 	}( Ractive_prototype_shared_add );
 
 	var Ractive_prototype_subtract = function( add ) {
 
 		return function( keypath, d ) {
-			add( this, keypath, d === undefined ? -1 : -d );
+			return add( this, keypath, d === undefined ? -1 : -d );
 		};
 	}( Ractive_prototype_shared_add );
 
-	var Ractive_prototype_toggle = function( keypath ) {
+	var Ractive_prototype_toggle = function( keypath, callback ) {
 		var value;
 		if ( typeof keypath !== 'string' ) {
 			if ( this.debug ) {
@@ -9830,7 +9834,7 @@
 			return;
 		}
 		value = this.get( keypath );
-		this.set( keypath, !value );
+		return this.set( keypath, !value, callback );
 	};
 
 	var Ractive_prototype_merge_mapOldToNewIndex = function( oldArray, newArray ) {
@@ -9881,11 +9885,11 @@
 		};
 	}( config_types );
 
-	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, clearCache, makeTransitionManager, notifyDependants, replaceData, mapOldToNewIndex, queueDependants ) {
+	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, Promise, clearCache, makeTransitionManager, notifyDependants, replaceData, mapOldToNewIndex, queueDependants ) {
 
 		var identifiers = {};
 		return function merge( keypath, array, options ) {
-			var currentArray, oldArray, newArray, identifier, lengthUnchanged, i, newIndices, mergeQueue, updateQueue, depsByKeypath, deps, transitionManager, upstreamQueue, keys;
+			var currentArray, oldArray, newArray, identifier, lengthUnchanged, i, newIndices, mergeQueue, updateQueue, depsByKeypath, deps, promise, fulfilPromise, transitionManager, upstreamQueue, keys;
 			currentArray = this.get( keypath );
 			if ( !isArray( currentArray ) || !isArray( array ) ) {
 				return this.set( keypath, array, options && options.complete );
@@ -9920,10 +9924,16 @@
 			newIndices = mapOldToNewIndex( oldArray, newArray );
 			replaceData( this, keypath, array );
 			if ( newIndices.unchanged && lengthUnchanged ) {
-				return;
+				return Promise.resolve();
 			}
 			runloop.start( this );
-			this._transitionManager = transitionManager = makeTransitionManager( this, options && options.complete );
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
+			if ( options && options.complete ) {
+				promise.then( options.complete );
+			}
 			mergeQueue = [];
 			updateQueue = [];
 			for ( i = 0; i < this._deps.length; i += 1 ) {
@@ -9954,6 +9964,7 @@
 			}
 			runloop.end();
 			transitionManager.init();
+			return promise;
 		};
 
 		function stringify( item ) {
@@ -9968,7 +9979,7 @@
 			}
 			return identifiers[ str ];
 		}
-	}( global_runloop, utils_warn, utils_isArray, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, Ractive_prototype_shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
+	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, Ractive_prototype_shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
 
 	var Ractive_prototype_detach = function() {
 		return this.fragment.detach();
