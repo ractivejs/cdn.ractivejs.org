@@ -233,7 +233,7 @@
 			var fulfilledHandlers = [],
 				rejectedHandlers = [],
 				state = PENDING,
-				result, dispatchHandlers, makeResolver, fulfil, reject;
+				result, dispatchHandlers, makeResolver, fulfil, reject, promise;
 			makeResolver = function( newState ) {
 				return function( value ) {
 					if ( state !== PENDING ) {
@@ -248,7 +248,7 @@
 			fulfil = makeResolver( FULFILLED );
 			reject = makeResolver( REJECTED );
 			callback( fulfil, reject );
-			return {
+			promise = {
 				then: function( onFulfilled, onRejected ) {
 					var promise2 = new Promise( function( fulfil, reject ) {
 						var processResolutionHandler = function( handler, handlers, forward ) {
@@ -273,11 +273,12 @@
 						}
 					} );
 					return promise2;
-				},
-				catch: function( onRejected ) {
-					return this.then( null, onRejected );
 				}
 			};
+			promise[ 'catch' ] = function( onRejected ) {
+				return this.then( null, onRejected );
+			};
+			return promise;
 		};
 		Promise.all = function( promises ) {
 			return new Promise( function( fulfil, reject ) {
@@ -919,7 +920,7 @@
 			if ( !unresolved.length ) {
 				return;
 			}
-			array = unresolved.splice( 0 );
+			array = unresolved.splice( 0, unresolved.length );
 			while ( thing = array.pop() ) {
 				if ( thing.keypath ) {
 					continue;
@@ -2436,8 +2437,7 @@
 	var Ractive_prototype_shared_makeQuery__makeQuery = function( defineProperties, test, cancel, sort, dirty, remove ) {
 
 		return function( ractive, selector, live, isComponentQuery ) {
-			var query;
-			query = [];
+			var query = [];
 			defineProperties( query, {
 				selector: {
 					value: selector
@@ -3924,8 +3924,7 @@
 	var render_shared_updateSection = function( isArray, isObject ) {
 
 		return function updateSection( section, value ) {
-			var fragmentOptions;
-			fragmentOptions = {
+			var fragmentOptions = {
 				descriptor: section.descriptor.f,
 				root: section.root,
 				pNode: section.parentFragment.pNode,
@@ -5580,12 +5579,24 @@
 		};
 	}( render_DomFragment_Attribute__Attribute );
 
-	var render_DomFragment_Element_shared_getMatchingStaticNodes = function getMatchingStaticNodes( element, selector ) {
-		if ( !element.matchingStaticNodes[ selector ] ) {
-			element.matchingStaticNodes[ selector ] = Array.prototype.slice.call( element.node.querySelectorAll( selector ) );
+	var utils_toArray = function toArray( arrayLike ) {
+		var array = [],
+			i = arrayLike.length;
+		while ( i-- ) {
+			array[ i ] = arrayLike[ i ];
 		}
-		return element.matchingStaticNodes[ selector ];
+		return array;
 	};
+
+	var render_DomFragment_Element_shared_getMatchingStaticNodes = function( toArray ) {
+
+		return function getMatchingStaticNodes( element, selector ) {
+			if ( !element.matchingStaticNodes[ selector ] ) {
+				element.matchingStaticNodes[ selector ] = toArray( element.node.querySelectorAll( selector ) );
+			}
+			return element.matchingStaticNodes[ selector ];
+		};
+	}( utils_toArray );
 
 	var render_DomFragment_Element_initialise_appendElementChildren = function( warn, namespaces, StringFragment, getMatchingStaticNodes, circular ) {
 

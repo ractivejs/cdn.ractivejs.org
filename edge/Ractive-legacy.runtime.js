@@ -143,6 +143,34 @@
 				return mapped;
 			};
 		}
+		if ( typeof Array.prototype.reduce !== 'function' ) {
+			Array.prototype.reduce = function( callback, opt_initialValue ) {
+				var i, value, len, valueIsSet;
+				if ( 'function' !== typeof callback ) {
+					throw new TypeError( callback + ' is not a function' );
+				}
+				len = this.length;
+				valueIsSet = false;
+				if ( arguments.length > 1 ) {
+					value = opt_initialValue;
+					valueIsSet = true;
+				}
+				for ( i = 0; i < len; i += 1 ) {
+					if ( this.hasOwnProperty( i ) ) {
+						if ( valueIsSet ) {
+							value = callback( value, this[ i ], i, this );
+						}
+					} else {
+						value = this[ i ];
+						valueIsSet = true;
+					}
+				}
+				if ( !valueIsSet ) {
+					throw new TypeError( 'Reduce of empty array with no initial value' );
+				}
+				return value;
+			};
+		}
 		if ( !Array.prototype.filter ) {
 			Array.prototype.filter = function( filter, context ) {
 				var i, len, filtered = [];
@@ -486,7 +514,7 @@
 			var fulfilledHandlers = [],
 				rejectedHandlers = [],
 				state = PENDING,
-				result, dispatchHandlers, makeResolver, fulfil, reject;
+				result, dispatchHandlers, makeResolver, fulfil, reject, promise;
 			makeResolver = function( newState ) {
 				return function( value ) {
 					if ( state !== PENDING ) {
@@ -501,7 +529,7 @@
 			fulfil = makeResolver( FULFILLED );
 			reject = makeResolver( REJECTED );
 			callback( fulfil, reject );
-			return {
+			promise = {
 				then: function( onFulfilled, onRejected ) {
 					var promise2 = new Promise( function( fulfil, reject ) {
 						var processResolutionHandler = function( handler, handlers, forward ) {
@@ -526,11 +554,12 @@
 						}
 					} );
 					return promise2;
-				},
-				catch: function( onRejected ) {
-					return this.then( null, onRejected );
 				}
 			};
+			promise[ 'catch' ] = function( onRejected ) {
+				return this.then( null, onRejected );
+			};
+			return promise;
 		};
 		Promise.all = function( promises ) {
 			return new Promise( function( fulfil, reject ) {
@@ -1172,7 +1201,7 @@
 			if ( !unresolved.length ) {
 				return;
 			}
-			array = unresolved.splice( 0 );
+			array = unresolved.splice( 0, unresolved.length );
 			while ( thing = array.pop() ) {
 				if ( thing.keypath ) {
 					continue;
@@ -2689,8 +2718,7 @@
 	var Ractive_prototype_shared_makeQuery__makeQuery = function( defineProperties, test, cancel, sort, dirty, remove ) {
 
 		return function( ractive, selector, live, isComponentQuery ) {
-			var query;
-			query = [];
+			var query = [];
 			defineProperties( query, {
 				selector: {
 					value: selector
@@ -4177,8 +4205,7 @@
 	var render_shared_updateSection = function( isArray, isObject ) {
 
 		return function updateSection( section, value ) {
-			var fragmentOptions;
-			fragmentOptions = {
+			var fragmentOptions = {
 				descriptor: section.descriptor.f,
 				root: section.root,
 				pNode: section.parentFragment.pNode,
@@ -5833,12 +5860,24 @@
 		};
 	}( render_DomFragment_Attribute__Attribute );
 
-	var render_DomFragment_Element_shared_getMatchingStaticNodes = function getMatchingStaticNodes( element, selector ) {
-		if ( !element.matchingStaticNodes[ selector ] ) {
-			element.matchingStaticNodes[ selector ] = Array.prototype.slice.call( element.node.querySelectorAll( selector ) );
+	var utils_toArray = function toArray( arrayLike ) {
+		var array = [],
+			i = arrayLike.length;
+		while ( i-- ) {
+			array[ i ] = arrayLike[ i ];
 		}
-		return element.matchingStaticNodes[ selector ];
+		return array;
 	};
+
+	var render_DomFragment_Element_shared_getMatchingStaticNodes = function( toArray ) {
+
+		return function getMatchingStaticNodes( element, selector ) {
+			if ( !element.matchingStaticNodes[ selector ] ) {
+				element.matchingStaticNodes[ selector ] = toArray( element.node.querySelectorAll( selector ) );
+			}
+			return element.matchingStaticNodes[ selector ];
+		};
+	}( utils_toArray );
 
 	var render_DomFragment_Element_initialise_appendElementChildren = function( warn, namespaces, StringFragment, getMatchingStaticNodes, circular ) {
 
