@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre1 - 2014-03-01
+	Ractive - v0.4.0-pre1 - 2014-03-02
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1021,10 +1021,9 @@
 					instances.push( instance );
 					instances[ instances._guid ] = true;
 				}
-				if ( flushing ) {
-					return;
+				if ( !flushing ) {
+					inFlight += 1;
 				}
-				inFlight += 1;
 			},
 			end: function() {
 				if ( flushing ) {
@@ -1300,11 +1299,13 @@
 		INVOCATION: 40
 	};
 
-	var shared_clearCache = function clearCache( ractive, keypath ) {
+	var shared_clearCache = function clearCache( ractive, keypath, dontTeardownWrapper ) {
 		var cacheMap, wrappedProperty;
-		if ( wrappedProperty = ractive._wrapped[ keypath ] ) {
-			if ( wrappedProperty.teardown() !== false ) {
-				ractive._wrapped[ keypath ] = null;
+		if ( !dontTeardownWrapper ) {
+			if ( wrappedProperty = ractive._wrapped[ keypath ] ) {
+				if ( wrappedProperty.teardown() !== false ) {
+					ractive._wrapped[ keypath ] = null;
+				}
 			}
 		}
 		ractive._cache[ keypath ] = undefined;
@@ -1659,13 +1660,16 @@
 		}
 		magicAdaptor = {
 			filter: function( object, keypath, ractive ) {
-				var keys, key, parentKeypath, parentValue;
+				var keys, key, parentKeypath, parentWrapper, parentValue;
 				if ( !keypath ) {
 					return false;
 				}
 				keys = keypath.split( '.' );
 				key = keys.pop();
 				parentKeypath = keys.join( '.' );
+				if ( ( parentWrapper = ractive._wrapped[ parentKeypath ] ) && !parentWrapper.magic ) {
+					return false;
+				}
 				parentValue = ractive.get( parentKeypath );
 				if ( isArray( parentValue ) && /^[0-9]+$/.test( key ) ) {
 					return false;
@@ -1679,6 +1683,7 @@
 		MagicWrapper = function( ractive, property, keypath ) {
 			var wrapper = this,
 				keys, objKeypath, descriptor, wrappers, oldGet, oldSet, get, set;
+			this.magic = true;
 			this.ractive = ractive;
 			this.keypath = keypath;
 			this.value = property;
@@ -1723,13 +1728,16 @@
 				i = len;
 				while ( i-- ) {
 					wrapper = wrappers[ i ];
-					wrapper.resetting = true;
+					if ( wrapper.updating ) {
+						continue;
+					}
+					wrapper.updating = true;
 					runloop.start( wrapper.ractive );
 					wrapper.ractive._changes.push( wrapper.keypath );
 					clearCache( wrapper.ractive, wrapper.keypath );
 					notifyDependants( wrapper.ractive, wrapper.keypath );
 					runloop.end();
-					wrapper.resetting = false;
+					wrapper.updating = false;
 				}
 			};
 			set._ractiveWrappers = [ this ];
@@ -1745,20 +1753,28 @@
 				return this.value;
 			},
 			reset: function( value ) {
+				if ( this.updating ) {
+					return;
+				}
+				this.updating = true;
 				this.obj[ this.prop ] = value;
-				return false;
+				clearCache( this.ractive, this.keypath );
+				this.updating = false;
 			},
 			set: function( key, value ) {
+				if ( this.updating ) {
+					return;
+				}
 				if ( !this.obj[ this.prop ] ) {
-					this.resetting = true;
+					this.updating = true;
 					this.obj[ this.prop ] = createBranch( key );
-					this.resetting = false;
+					this.updating = false;
 				}
 				this.obj[ this.prop ][ key ] = value;
 			},
 			teardown: function() {
 				var descriptor, set, value, wrappers, index;
-				if ( this.resetting ) {
+				if ( this.updating ) {
 					return false;
 				}
 				descriptor = Object.getOwnPropertyDescriptor( this.obj, this.prop );
@@ -1801,6 +1817,7 @@
 		};
 		MagicArrayWrapper = function( ractive, array, keypath ) {
 			this.value = array;
+			this.magic = true;
 			this.magicWrapper = magicAdaptor.wrap( ractive, array, keypath );
 			this.arrayWrapper = arrayAdaptor.wrap( ractive, array, keypath );
 		};
@@ -1822,7 +1839,7 @@
 	var shared_adaptIfNecessary = function( clone, isObject, adaptorRegistry, arrayAdaptor, magicAdaptor, magicArrayAdaptor ) {
 
 		var prefixers = {};
-		return function adaptIfNecessary( ractive, keypath, value, isExpressionResult, shouldClone ) {
+		return function adaptIfNecessary( ractive, keypath, value, isExpressionResult ) {
 			var len, i, adaptor, wrapped;
 			len = ractive.adapt.length;
 			for ( i = 0; i < len; i += 1 ) {
@@ -1842,20 +1859,11 @@
 			if ( !isExpressionResult ) {
 				if ( ractive.magic ) {
 					if ( magicArrayAdaptor.filter( value, keypath, ractive ) ) {
-						if ( shouldClone ) {
-							value = value.slice();
-						}
 						ractive._wrapped[ keypath ] = magicArrayAdaptor.wrap( ractive, value, keypath );
 					} else if ( magicAdaptor.filter( value, keypath, ractive ) ) {
-						if ( shouldClone ) {
-							value = clone( value );
-						}
 						ractive._wrapped[ keypath ] = magicAdaptor.wrap( ractive, value, keypath );
 					}
 				} else if ( ractive.modifyArrays && arrayAdaptor.filter( value, keypath, ractive ) ) {
-					if ( shouldClone ) {
-						value = value.slice();
-					}
 					ractive._wrapped[ keypath ] = arrayAdaptor.wrap( ractive, value, keypath );
 				}
 			}
@@ -2025,56 +2033,55 @@
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
 
-	var shared_replaceData = function( hasOwnProperty, clone, createBranch, clearCache ) {
+	var shared_set = function( circular, isEqual, createBranch, clearCache, notifyDependants ) {
 
-		return function( ractive, keypath, value ) {
-			var keys, accumulated, wrapped, obj, key, currentKeypath, keypathToClear;
-			keys = keypath.split( '.' );
-			accumulated = [];
-			if ( wrapped = ractive._wrapped[ '' ] ) {
-				if ( wrapped.set ) {
-					wrapped.set( keys.join( '.' ), value );
-				}
-				obj = wrapped.get();
-			} else {
-				obj = ractive.data;
+		var get;
+		circular.push( function() {
+			get = circular.get;
+		} );
+
+		function set( ractive, keypath, value, silent ) {
+			var keys, lastKey, parentKeypath, parentValue, wrapper, evaluator, dontTeardownWrapper;
+			if ( isEqual( ractive._cache[ keypath ], value ) ) {
+				return;
 			}
-			while ( keys.length > 1 ) {
-				key = keys.shift();
-				accumulated.push( key );
-				currentKeypath = accumulated.join( '.' );
-				if ( wrapped = ractive._wrapped[ currentKeypath ] ) {
-					if ( wrapped.set ) {
-						wrapped.set( keys.join( '.' ), value );
-					}
-					obj = wrapped.get();
+			wrapper = ractive._wrapped[ keypath ];
+			evaluator = ractive._evaluators[ keypath ];
+			if ( wrapper && wrapper.reset ) {
+				wrapper.reset( value );
+				value = wrapper.get();
+				dontTeardownWrapper = true;
+			}
+			if ( evaluator ) {
+				evaluator.value = value;
+			}
+			if ( !evaluator && ( !wrapper || !wrapper.reset ) ) {
+				keys = keypath.split( '.' );
+				lastKey = keys.pop();
+				parentKeypath = keys.join( '.' );
+				wrapper = ractive._wrapped[ parentKeypath ];
+				if ( wrapper && wrapper.set ) {
+					wrapper.set( lastKey, value );
 				} else {
-					if ( !hasOwnProperty.call( obj, key ) && key in obj ) {
-						if ( !keypathToClear ) {
-							keypathToClear = currentKeypath;
-						}
-						obj[ key ] = clone( obj[ key ] );
+					parentValue = wrapper ? wrapper.get() : get( ractive, parentKeypath );
+					if ( !parentValue ) {
+						parentValue = createBranch( lastKey );
+						set( ractive, parentKeypath, parentValue );
 					}
-					if ( !obj[ key ] ) {
-						if ( !keypathToClear ) {
-							keypathToClear = currentKeypath;
-						}
-						obj[ key ] = createBranch( keys[ 0 ] );
-					}
-					obj = obj[ key ];
+					parentValue[ lastKey ] = value;
 				}
 			}
-			key = keys[ 0 ];
-			if ( ( wrapped = ractive._wrapped[ currentKeypath ] ) && wrapped.set ) {
-				wrapped.set( key, value );
-			} else {
-				obj[ key ] = value;
+			clearCache( ractive, keypath, dontTeardownWrapper );
+			if ( !silent ) {
+				ractive._changes.push( keypath );
+				notifyDependants( ractive, keypath );
 			}
-			clearCache( ractive, keypathToClear || keypath );
-		};
-	}( utils_hasOwnProperty, utils_clone, utils_createBranch, shared_clearCache );
+		}
+		circular.set = set;
+		return set;
+	}( circular, utils_isEqual, utils_createBranch, shared_clearCache, shared_notifyDependants );
 
-	var shared_get_getFromParent = function( circular, runloop, createComponentBinding, replaceData ) {
+	var shared_get_getFromParent = function( circular, runloop, createComponentBinding, set ) {
 
 		var get;
 		circular.push( function() {
@@ -2103,16 +2110,16 @@
 		};
 
 		function createLateComponentBinding( parent, child, parentKeypath, childKeypath, value ) {
-			replaceData( child, childKeypath, value );
+			set( child, childKeypath, value, true );
 			createComponentBinding( child.component, parent, parentKeypath, childKeypath );
 		}
-	}( circular, global_runloop, shared_createComponentBinding, shared_replaceData );
+	}( circular, global_runloop, shared_createComponentBinding, shared_set );
 
 	var shared_get_FAILED_LOOKUP = {
 		FAILED_LOOKUP: true
 	};
 
-	var shared_get__get = function( circular, adaptorRegistry, hasOwnProperty, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
+	var shared_get__get = function( circular, adaptorRegistry, hasOwnProperty, clone, adaptIfNecessary, getFromParent, FAILED_LOOKUP ) {
 
 		function get( ractive, keypath, options ) {
 			var cache = ractive._cache,
@@ -2169,13 +2176,13 @@
 			if ( typeof parentValue === 'object' && !( key in parentValue ) ) {
 				return ractive._cache[ keypath ] = FAILED_LOOKUP;
 			}
-			value = parentValue[ key ];
 			shouldClone = !hasOwnProperty.call( parentValue, key );
-			value = adaptIfNecessary( ractive, keypath, value, false, shouldClone );
+			value = shouldClone ? clone( parentValue[ key ] ) : parentValue[ key ];
+			value = adaptIfNecessary( ractive, keypath, value, false );
 			ractive._cache[ keypath ] = value;
 			return value;
 		}
-	}( circular, registries_adaptors, utils_hasOwnProperty, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
+	}( circular, registries_adaptors, utils_hasOwnProperty, utils_clone, shared_adaptIfNecessary, shared_get_getFromParent, shared_get_FAILED_LOOKUP );
 
 	var registries_interpolators = function( circular, hasOwnProperty, isArray, isObject, isNumeric ) {
 
@@ -2313,35 +2320,6 @@
 			};
 		}
 	}( circular, utils_warn, registries_interpolators );
-
-	var shared_set = function( circular, get, clearCache, notifyDependants, replaceData ) {
-
-		function set( ractive, keypath, value ) {
-			var cached, previous, wrapped, evaluator;
-			wrapped = ractive._wrapped[ keypath ];
-			if ( wrapped && wrapped.reset && wrapped.get() !== value ) {
-				wrapped.reset( value );
-				value = wrapped.get();
-			}
-			if ( evaluator = ractive._evaluators[ keypath ] ) {
-				evaluator.value = value;
-			}
-			cached = ractive._cache[ keypath ];
-			previous = get( ractive, keypath );
-			if ( value === cached && typeof value !== 'object' ) {
-				return;
-			}
-			if ( !evaluator && ( !wrapped || !wrapped.reset ) ) {
-				replaceData( ractive, keypath, value );
-			}
-			ractive._changes.push( keypath );
-			clearCache( ractive, keypath );
-			notifyDependants( ractive, keypath );
-			return true;
-		}
-		circular.set = set;
-		return set;
-	}( circular, shared_get__get, shared_clearCache, shared_notifyDependants, shared_replaceData );
 
 	var Ractive_prototype_animate_Animation = function( warn, runloop, interpolate, set ) {
 
@@ -2896,10 +2874,10 @@
 	}( utils_getElement );
 
 	var Ractive_prototype_merge_mapOldToNewIndex = function( oldArray, newArray ) {
-		var usedIndices, mapper, firstUnusedIndex, newIndices, changed;
+		var usedIndices, firstUnusedIndex, newIndices, changed;
 		usedIndices = {};
 		firstUnusedIndex = 0;
-		mapper = function( item, i ) {
+		newIndices = oldArray.map( function( item, i ) {
 			var index, start, len;
 			start = firstUnusedIndex;
 			len = newArray.length;
@@ -2919,53 +2897,52 @@
 			}
 			usedIndices[ index ] = true;
 			return index;
-		};
-		newIndices = oldArray.map( mapper );
+		} );
 		newIndices.unchanged = !changed;
 		return newIndices;
 	};
 
-	var Ractive_prototype_merge_queueDependants = function( types ) {
+	var Ractive_prototype_merge_propagateChanges = function( types, notifyDependants ) {
 
-		return function queueDependants( keypath, deps, mergeQueue, updateQueue ) {
-			var i, dependant;
-			i = deps.length;
-			while ( i-- ) {
-				dependant = deps[ i ];
+		return function( ractive, keypath, newIndices, lengthUnchanged ) {
+			var updateDependant;
+			ractive._changes.push( keypath );
+			updateDependant = function( dependant ) {
 				if ( dependant.type === types.REFERENCE ) {
 					dependant.update();
 				} else if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
-					mergeQueue.push( dependant );
+					dependant.merge( newIndices );
 				} else {
-					updateQueue.push( dependant );
+					dependant.update();
 				}
+			};
+			ractive._deps.forEach( function( depsByKeypath ) {
+				var dependants = depsByKeypath[ keypath ];
+				if ( dependants ) {
+					dependants.forEach( updateDependant );
+				}
+			} );
+			if ( !lengthUnchanged ) {
+				notifyDependants( ractive, keypath + '.length', true );
 			}
 		};
-	}( config_types );
+	}( config_types, shared_notifyDependants );
 
-	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, Promise, clearCache, makeTransitionManager, notifyDependants, replaceData, mapOldToNewIndex, queueDependants ) {
+	var Ractive_prototype_merge__merge = function( runloop, warn, isArray, Promise, clearCache, makeTransitionManager, notifyDependants, set, mapOldToNewIndex, propagateChanges ) {
 
-		var identifiers = {};
+		var comparators = {};
 		return function merge( keypath, array, options ) {
-			var currentArray, oldArray, newArray, identifier, lengthUnchanged, i, newIndices, mergeQueue, updateQueue, depsByKeypath, deps, promise, fulfilPromise, transitionManager, upstreamQueue, keys;
+			var currentArray, oldArray, newArray, comparator, lengthUnchanged, newIndices, promise, fulfilPromise, transitionManager;
 			currentArray = this.get( keypath );
 			if ( !isArray( currentArray ) || !isArray( array ) ) {
 				return this.set( keypath, array, options && options.complete );
 			}
 			lengthUnchanged = currentArray.length === array.length;
 			if ( options && options.compare ) {
-				if ( options.compare === true ) {
-					identifier = stringify;
-				} else if ( typeof options.compare === 'string' ) {
-					identifier = getIdentifier( options.compare );
-				} else if ( typeof options.compare === 'function' ) {
-					identifier = options.compare;
-				} else {
-					throw new Error( 'The `compare` option must be a function, or a string representing an identifying field (or `true` to use JSON.stringify)' );
-				}
+				comparator = getComparatorFunction( options.compare );
 				try {
-					oldArray = currentArray.map( identifier );
-					newArray = array.map( identifier );
+					oldArray = currentArray.map( comparator );
+					newArray = array.map( comparator );
 				} catch ( err ) {
 					if ( this.debug ) {
 						throw err;
@@ -2980,48 +2957,18 @@
 				newArray = array;
 			}
 			newIndices = mapOldToNewIndex( oldArray, newArray );
-			replaceData( this, keypath, array );
-			if ( newIndices.unchanged && lengthUnchanged ) {
-				return Promise.resolve();
-			}
-			runloop.start( this );
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
 			} );
 			this._transitionManager = transitionManager = makeTransitionManager( this, fulfilPromise );
+			runloop.start( this );
+			set( this, keypath, array, true );
+			propagateChanges( this, keypath, newIndices, lengthUnchanged );
+			runloop.end();
+			transitionManager.init();
 			if ( options && options.complete ) {
 				promise.then( options.complete );
 			}
-			mergeQueue = [];
-			updateQueue = [];
-			for ( i = 0; i < this._deps.length; i += 1 ) {
-				depsByKeypath = this._deps[ i ];
-				if ( !depsByKeypath ) {
-					continue;
-				}
-				deps = depsByKeypath[ keypath ];
-				if ( deps ) {
-					queueDependants( keypath, deps, mergeQueue, updateQueue );
-					while ( mergeQueue.length ) {
-						mergeQueue.pop().merge( newIndices );
-					}
-					while ( updateQueue.length ) {
-						updateQueue.pop().update();
-					}
-				}
-			}
-			upstreamQueue = [];
-			keys = keypath.split( '.' );
-			while ( keys.length ) {
-				keys.pop();
-				upstreamQueue.push( keys.join( '.' ) );
-			}
-			notifyDependants.multiple( this, upstreamQueue, true );
-			if ( oldArray.length !== newArray.length ) {
-				notifyDependants( this, keypath + '.length', true );
-			}
-			runloop.end();
-			transitionManager.init();
 			return promise;
 		};
 
@@ -3029,15 +2976,24 @@
 			return JSON.stringify( item );
 		}
 
-		function getIdentifier( str ) {
-			if ( !identifiers[ str ] ) {
-				identifiers[ str ] = function( item ) {
-					return item[ str ];
-				};
+		function getComparatorFunction( comparator ) {
+			if ( comparator === true ) {
+				return stringify;
 			}
-			return identifiers[ str ];
+			if ( typeof comparator === 'string' ) {
+				if ( !comparators[ comparator ] ) {
+					comparators[ comparator ] = function( item ) {
+						return item[ comparator ];
+					};
+				}
+				return comparators[ comparator ];
+			}
+			if ( typeof comparator === 'function' ) {
+				return comparator;
+			}
+			throw new Error( 'The `compare` option must be a function, or a string representing an identifying field (or `true` to use JSON.stringify)' );
 		}
-	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, shared_replaceData, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_queueDependants );
+	}( global_runloop, utils_warn, utils_isArray, utils_Promise, shared_clearCache, shared_makeTransitionManager, shared_notifyDependants, shared_set, Ractive_prototype_merge_mapOldToNewIndex, Ractive_prototype_merge_propagateChanges );
 
 	var Ractive_prototype_observe_Observer = function( runloop, isEqual, get ) {
 
@@ -10090,8 +10046,7 @@
 	var Ractive_prototype_set = function( runloop, isObject, isEqual, normaliseKeypath, Promise, get, set, clearCache, notifyDependants, makeTransitionManager ) {
 
 		return function Ractive_prototype_set( keypath, value, callback ) {
-			var map, changes, promise, fulfilPromise, transitionManager;
-			changes = [];
+			var map, promise, fulfilPromise, transitionManager;
 			runloop.start( this );
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
@@ -10104,16 +10059,12 @@
 					if ( map.hasOwnProperty( keypath ) ) {
 						value = map[ keypath ];
 						keypath = normaliseKeypath( keypath );
-						if ( set( this, keypath, value ) ) {
-							changes.push( keypath );
-						}
+						set( this, keypath, value );
 					}
 				}
 			} else {
 				keypath = normaliseKeypath( keypath );
-				if ( set( this, keypath, value ) ) {
-					changes.push( keypath );
-				}
+				set( this, keypath, value );
 			}
 			runloop.end();
 			transitionManager.init();
