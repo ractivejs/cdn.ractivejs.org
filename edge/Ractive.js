@@ -123,7 +123,7 @@
 		if ( !svg ) {
 			return function( type, ns ) {
 				if ( ns && ns !== namespaces.html ) {
-					throw 'This browser does not support namespaces other than http://www.w3.org/1999/xhtml. The most likely cause of this error is that you\'re trying to render SVG in an older browser. See https://github.com/RactiveJS/Ractive/wiki/SVG-and-older-browsers for more information';
+					throw 'This browser does not support namespaces other than http://www.w3.org/1999/xhtml. The most likely cause of this error is that you\'re trying to render SVG in an older browser. See http://docs.ractivejs.org/latest/svg-and-older-browsers for more information';
 				}
 				return document.createElement( type );
 			};
@@ -4468,7 +4468,9 @@
 			return true;
 		};
 		updateModel = function() {
+			runloop.start( this._ractive.root );
 			this._ractive.binding.update();
+			runloop.end();
 		};
 		getOptions = {
 			evaluateWrapped: true
@@ -5711,7 +5713,7 @@
 			}
 			decorator.fn = ractive.decorators[ name ];
 			if ( !decorator.fn ) {
-				errorMessage = 'Missing "' + name + '" decorator. You may need to download a plugin via https://github.com/RactiveJS/Ractive/wiki/Plugins#decorators';
+				errorMessage = 'Missing "' + name + '" decorator. You may need to download a plugin via http://docs.ractivejs.org/latest/plugins#decorators';
 				if ( ractive.debug ) {
 					throw new Error( errorMessage );
 				} else {
@@ -5783,7 +5785,7 @@
 				this.custom = definition( this.node, getCustomHandler( eventName ) );
 			} else {
 				if ( !( 'on' + eventName in this.node ) ) {
-					warn( 'Missing "' + this.name + '" event. You may need to download a plugin via https://github.com/RactiveJS/Ractive/wiki/Plugins#events' );
+					warn( 'Missing "' + this.name + '" event. You may need to download a plugin via http://docs.ractivejs.org/latest/plugins#events' );
 				}
 				this.node.addEventListener( eventName, genericHandler, false );
 			}
@@ -6370,7 +6372,7 @@
 			}
 			this._fn = root.transitions[ name ];
 			if ( !this._fn ) {
-				errorMessage = 'Missing "' + name + '" transition. You may need to download a plugin via https://github.com/RactiveJS/Ractive/wiki/Plugins#transitions';
+				errorMessage = 'Missing "' + name + '" transition. You may need to download a plugin via http://docs.ractivejs.org/latest/plugins#transitions';
 				if ( root.debug ) {
 					throw new Error( errorMessage );
 				} else {
