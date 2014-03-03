@@ -566,7 +566,7 @@
 			while ( keys.length > 1 ) {
 				keys.pop();
 				upstreamKeypath = keys.join( '.' );
-				if ( !upstreamChanges[ upstreamKeypath ] ) {
+				if ( upstreamChanges[ upstreamKeypath ] !== true ) {
 					upstreamChanges.push( upstreamKeypath );
 					upstreamChanges[ upstreamKeypath ] = true;
 				}
