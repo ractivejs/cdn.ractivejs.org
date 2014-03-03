@@ -2812,10 +2812,10 @@
 			var value;
 			keypath = normaliseKeypath( keypath );
 			value = get( this, keypath, options );
-			if ( this._captured && !this._captured[ keypath ] ) {
+			if ( this._captured && this._captured[ keypath ] !== true ) {
 				this._captured.push( keypath );
 				this._captured[ keypath ] = true;
-				if ( value === undefined && !this._unresolvedImplicitDependencies[ keypath ] ) {
+				if ( value === undefined && this._unresolvedImplicitDependencies[ keypath ] !== true ) {
 					new UnresolvedImplicitDependency( this, keypath );
 				}
 			}
@@ -10202,7 +10202,7 @@
 						continue;
 					}
 					if ( binding.checkboxName ) {
-						if ( binding.changed() && !deferredCheckboxes[ keypath ] ) {
+						if ( binding.changed() && deferredCheckboxes[ keypath ] !== true ) {
 							deferredCheckboxes[ keypath ] = true;
 							deferredCheckboxes.push( keypath );
 						}
