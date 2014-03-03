@@ -1184,9 +1184,10 @@
 	var shared_get_arrayAdaptor_processWrapper = function( types, clearCache, notifyDependants, set ) {
 
 		return function( wrapper, array, methodName, spliceSummary ) {
-			var root, keypath, depsByKeypath, deps, clearEnd, smartUpdateQueue, dumbUpdateQueue, i, changed, start, end, childKeypath, lengthUnchanged;
+			var root, keypath, clearEnd, updateDependant, i, changed, start, end, childKeypath, lengthUnchanged;
 			root = wrapper.root;
 			keypath = wrapper.keypath;
+			root._changes.push( keypath );
 			if ( methodName === 'sort' || methodName === 'reverse' ) {
 				set( root, keypath, array );
 				return;
@@ -1198,24 +1199,19 @@
 			for ( i = spliceSummary.start; i < clearEnd; i += 1 ) {
 				clearCache( root, keypath + '.' + i );
 			}
-			smartUpdateQueue = [];
-			dumbUpdateQueue = [];
-			for ( i = 0; i < root._deps.length; i += 1 ) {
-				depsByKeypath = root._deps[ i ];
-				if ( !depsByKeypath ) {
-					continue;
+			updateDependant = function( dependant ) {
+				if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
+					dependant.splice( spliceSummary );
+				} else {
+					dependant.update();
 				}
-				deps = depsByKeypath[ keypath ];
-				if ( deps ) {
-					queueDependants( keypath, deps, smartUpdateQueue, dumbUpdateQueue );
-					while ( smartUpdateQueue.length ) {
-						smartUpdateQueue.pop().smartUpdate( methodName, spliceSummary );
-					}
-					while ( dumbUpdateQueue.length ) {
-						dumbUpdateQueue.pop().update();
-					}
+			};
+			root._deps.forEach( function( depsByKeypath ) {
+				var dependants = depsByKeypath[ keypath ];
+				if ( dependants ) {
+					dependants.forEach( updateDependant );
 				}
-			}
+			} );
 			if ( spliceSummary.added && spliceSummary.removed ) {
 				changed = Math.max( spliceSummary.added, spliceSummary.removed );
 				start = spliceSummary.start;
@@ -1231,21 +1227,6 @@
 				notifyDependants( root, keypath + '.length', true );
 			}
 		};
-
-		function queueDependants( keypath, deps, smartUpdateQueue, dumbUpdateQueue ) {
-			var k, dependant;
-			k = deps.length;
-			while ( k-- ) {
-				dependant = deps[ k ];
-				if ( dependant.type === types.REFERENCE ) {
-					dependant.update();
-				} else if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
-					smartUpdateQueue.push( dependant );
-				} else {
-					dumbUpdateQueue.push( dependant );
-				}
-			}
-		}
 	}( config_types, shared_clearCache, shared_notifyDependants, shared_set );
 
 	var shared_get_arrayAdaptor_patch = function( runloop, defineProperty, getSpliceEquivalent, summariseSpliceOperation, processWrapper ) {
@@ -3780,68 +3761,6 @@
 		return DomInterpolator;
 	}( config_types, shared_teardown, render_shared_initMustache, render_shared_resolveMustache, render_shared_updateMustache, render_DomFragment_shared_detach );
 
-	var render_DomFragment_Section_reassignFragments = function( reassignFragment ) {
-
-		return function( section, start, end, by ) {
-			var i, fragment, indexRef, oldIndex, newIndex, oldKeypath, newKeypath;
-			indexRef = section.descriptor.i;
-			for ( i = start; i < end; i += 1 ) {
-				fragment = section.fragments[ i ];
-				oldIndex = i - by;
-				newIndex = i;
-				oldKeypath = section.keypath + '.' + ( i - by );
-				newKeypath = section.keypath + '.' + i;
-				fragment.index += by;
-				reassignFragment( fragment, indexRef, newIndex, oldKeypath, newKeypath );
-			}
-		};
-	}( render_DomFragment_Section_reassignFragment );
-
-	var render_DomFragment_Section_helpers_splice = function( reassignFragments ) {
-
-		return function( section, spliceSummary ) {
-			var insertionPoint, balance, i, start, end, insertStart, insertEnd, spliceArgs, fragmentOptions;
-			balance = spliceSummary.balance;
-			if ( !balance ) {
-				return;
-			}
-			start = spliceSummary.start;
-			if ( balance < 0 ) {
-				end = start - balance;
-				for ( i = start; i < end; i += 1 ) {
-					section.fragments[ i ].teardown( true );
-				}
-				section.fragments.splice( start, -balance );
-			} else {
-				fragmentOptions = {
-					descriptor: section.descriptor.f,
-					root: section.root,
-					pNode: section.parentFragment.pNode,
-					owner: section
-				};
-				if ( section.descriptor.i ) {
-					fragmentOptions.indexRef = section.descriptor.i;
-				}
-				insertStart = start + spliceSummary.removed;
-				insertEnd = start + spliceSummary.added;
-				insertionPoint = section.fragments[ insertStart ] ? section.fragments[ insertStart ].firstNode() : section.parentFragment.findNextNode( section );
-				spliceArgs = [
-					insertStart,
-					0
-				].concat( new Array( balance ) );
-				section.fragments.splice.apply( section.fragments, spliceArgs );
-				for ( i = insertStart; i < insertEnd; i += 1 ) {
-					fragmentOptions.context = section.keypath + '.' + i;
-					fragmentOptions.index = i;
-					section.fragments[ i ] = section.createFragment( fragmentOptions );
-				}
-				section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
-			}
-			section.length += balance;
-			reassignFragments( section, start, section.length, balance );
-		};
-	}( render_DomFragment_Section_reassignFragments );
-
 	var render_DomFragment_Section_prototype_merge = function( reassignFragment ) {
 
 		var toTeardown = [];
@@ -4043,7 +3962,72 @@
 		};
 	}( config_isClient, render_shared_updateSection );
 
-	var render_DomFragment_Section__Section = function( types, initMustache, updateMustache, resolveMustache, splice, merge, render, teardown, circular ) {
+	var render_DomFragment_Section_reassignFragments = function( reassignFragment ) {
+
+		return function( section, start, end, by ) {
+			var i, fragment, indexRef, oldIndex, newIndex, oldKeypath, newKeypath;
+			indexRef = section.descriptor.i;
+			for ( i = start; i < end; i += 1 ) {
+				fragment = section.fragments[ i ];
+				oldIndex = i - by;
+				newIndex = i;
+				oldKeypath = section.keypath + '.' + ( i - by );
+				newKeypath = section.keypath + '.' + i;
+				fragment.index += by;
+				reassignFragment( fragment, indexRef, newIndex, oldKeypath, newKeypath );
+			}
+		};
+	}( render_DomFragment_Section_reassignFragment );
+
+	var render_DomFragment_Section_prototype_splice = function( reassignFragments ) {
+
+		return function( spliceSummary ) {
+			var section = this,
+				insertionPoint, balance, i, start, end, insertStart, insertEnd, spliceArgs, fragmentOptions;
+			balance = spliceSummary.balance;
+			if ( !balance ) {
+				return;
+			}
+			section.rendering = true;
+			start = spliceSummary.start;
+			if ( balance < 0 ) {
+				end = start - balance;
+				for ( i = start; i < end; i += 1 ) {
+					section.fragments[ i ].teardown( true );
+				}
+				section.fragments.splice( start, -balance );
+			} else {
+				fragmentOptions = {
+					descriptor: section.descriptor.f,
+					root: section.root,
+					pNode: section.parentFragment.pNode,
+					owner: section
+				};
+				if ( section.descriptor.i ) {
+					fragmentOptions.indexRef = section.descriptor.i;
+				}
+				insertStart = start + spliceSummary.removed;
+				insertEnd = start + spliceSummary.added;
+				insertionPoint = section.fragments[ insertStart ] ? section.fragments[ insertStart ].firstNode() : section.parentFragment.findNextNode( section );
+				spliceArgs = [
+					insertStart,
+					0
+				].concat( new Array( balance ) );
+				section.fragments.splice.apply( section.fragments, spliceArgs );
+				for ( i = insertStart; i < insertEnd; i += 1 ) {
+					fragmentOptions.context = section.keypath + '.' + i;
+					fragmentOptions.index = i;
+					section.fragments[ i ] = section.createFragment( fragmentOptions );
+				}
+				section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
+			}
+			section.length += balance;
+			reassignFragments( section, start, section.length, balance );
+			section.rendering = false;
+		};
+	}( render_DomFragment_Section_reassignFragments );
+
+	var render_DomFragment_Section__Section = function( types, initMustache, updateMustache, resolveMustache, merge, render, splice, teardown, circular ) {
 
 		var DomSection, DomFragment;
 		circular.push( function() {
@@ -4067,11 +4051,7 @@
 		DomSection.prototype = {
 			update: updateMustache,
 			resolve: resolveMustache,
-			smartUpdate: function( methodName, spliceSummary ) {
-				this.rendering = true;
-				splice( this, spliceSummary );
-				this.rendering = false;
-			},
+			splice: splice,
 			merge: merge,
 			detach: function() {
 				var i, len;
@@ -4159,7 +4139,7 @@
 			}
 		};
 		return DomSection;
-	}( config_types, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache, render_DomFragment_Section_helpers_splice, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, shared_teardown, circular );
+	}( config_types, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, render_DomFragment_Section_prototype_splice, shared_teardown, circular );
 
 	var render_DomFragment_Triple = function( types, matches, initMustache, updateMustache, resolveMustache, insertHtml, teardown ) {
 
