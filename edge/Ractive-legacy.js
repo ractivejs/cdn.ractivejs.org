@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre1 - 2014-03-02
+	Ractive - v0.4.0-pre1 - 2014-03-03
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1424,20 +1424,77 @@
 		}
 	};
 
-	var shared_get_arrayAdaptor_processWrapper = function( types, clearCache, notifyDependants ) {
+	var utils_createBranch = function() {
+
+		var numeric = /^\s*[0-9]+\s*$/;
+		return function( key ) {
+			return numeric.test( key ) ? [] : {};
+		};
+	}();
+
+	var shared_set = function( circular, isEqual, createBranch, clearCache, notifyDependants ) {
+
+		var get;
+		circular.push( function() {
+			get = circular.get;
+		} );
+
+		function set( ractive, keypath, value, silent ) {
+			var keys, lastKey, parentKeypath, parentValue, wrapper, evaluator, dontTeardownWrapper;
+			if ( isEqual( ractive._cache[ keypath ], value ) ) {
+				return;
+			}
+			wrapper = ractive._wrapped[ keypath ];
+			evaluator = ractive._evaluators[ keypath ];
+			if ( wrapper && wrapper.reset ) {
+				wrapper.reset( value );
+				value = wrapper.get();
+				dontTeardownWrapper = true;
+			}
+			if ( evaluator ) {
+				evaluator.value = value;
+			}
+			if ( !evaluator && ( !wrapper || !wrapper.reset ) ) {
+				keys = keypath.split( '.' );
+				lastKey = keys.pop();
+				parentKeypath = keys.join( '.' );
+				wrapper = ractive._wrapped[ parentKeypath ];
+				if ( wrapper && wrapper.set ) {
+					wrapper.set( lastKey, value );
+				} else {
+					parentValue = wrapper ? wrapper.get() : get( ractive, parentKeypath );
+					if ( !parentValue ) {
+						parentValue = createBranch( lastKey );
+						set( ractive, parentKeypath, parentValue );
+					}
+					parentValue[ lastKey ] = value;
+				}
+			}
+			clearCache( ractive, keypath, dontTeardownWrapper );
+			if ( !silent ) {
+				ractive._changes.push( keypath );
+				notifyDependants( ractive, keypath );
+			}
+		}
+		circular.set = set;
+		return set;
+	}( circular, utils_isEqual, utils_createBranch, shared_clearCache, shared_notifyDependants );
+
+	var shared_get_arrayAdaptor_processWrapper = function( types, clearCache, notifyDependants, set ) {
 
 		return function( wrapper, array, methodName, spliceSummary ) {
-			var root, keypath, depsByKeypath, deps, keys, upstreamQueue, smartUpdateQueue, dumbUpdateQueue, i, changed, start, end, childKeypath, lengthUnchanged;
+			var root, keypath, depsByKeypath, deps, clearEnd, smartUpdateQueue, dumbUpdateQueue, i, changed, start, end, childKeypath, lengthUnchanged;
 			root = wrapper.root;
 			keypath = wrapper.keypath;
 			if ( methodName === 'sort' || methodName === 'reverse' ) {
-				root.set( keypath, array );
+				set( root, keypath, array );
 				return;
 			}
 			if ( !spliceSummary ) {
 				return;
 			}
-			for ( i = spliceSummary.start; i < array.length - spliceSummary.balance; i += 1 ) {
+			clearEnd = !spliceSummary.balance ? spliceSummary.added : array.length - Math.min( spliceSummary.balance, 0 );
+			for ( i = spliceSummary.start; i < clearEnd; i += 1 ) {
 				clearCache( root, keypath + '.' + i );
 			}
 			smartUpdateQueue = [];
@@ -1468,13 +1525,6 @@
 					notifyDependants( root, childKeypath );
 				}
 			}
-			upstreamQueue = [];
-			keys = keypath.split( '.' );
-			while ( keys.length ) {
-				keys.pop();
-				upstreamQueue.push( keys.join( '.' ) );
-			}
-			notifyDependants.multiple( root, upstreamQueue, true );
 			if ( !lengthUnchanged ) {
 				clearCache( root, keypath + '.length' );
 				notifyDependants( root, keypath + '.length', true );
@@ -1495,7 +1545,7 @@
 				}
 			}
 		}
-	}( config_types, shared_clearCache, shared_notifyDependants );
+	}( config_types, shared_clearCache, shared_notifyDependants, shared_set );
 
 	var shared_get_arrayAdaptor_patch = function( runloop, defineProperty, getSpliceEquivalent, summariseSpliceOperation, processWrapper ) {
 
@@ -1521,7 +1571,7 @@
 				while ( i-- ) {
 					wrapper = this._ractive.wrappers[ i ];
 					runloop.start( wrapper.root );
-					processWrapper( this._ractive.wrappers[ i ], this, methodName, spliceSummary );
+					processWrapper( wrapper, this, methodName, spliceSummary );
 					runloop.end();
 				}
 				this._ractive.setting = false;
@@ -1632,14 +1682,6 @@
 		errorMessage = 'Something went wrong in a rather interesting way';
 		return arrayAdaptor;
 	}( utils_defineProperty, utils_isArray, shared_get_arrayAdaptor_patch );
-
-	var utils_createBranch = function() {
-
-		var numeric = /^\s*[0-9]+\s*$/;
-		return function( key ) {
-			return numeric.test( key ) ? [] : {};
-		};
-	}();
 
 	var shared_get_magicAdaptor = function( runloop, createBranch, isArray, clearCache, notifyDependants ) {
 
@@ -2025,54 +2067,6 @@
 			}
 		};
 	}( circular, utils_isArray, utils_isEqual, shared_registerDependant, shared_unregisterDependant );
-
-	var shared_set = function( circular, isEqual, createBranch, clearCache, notifyDependants ) {
-
-		var get;
-		circular.push( function() {
-			get = circular.get;
-		} );
-
-		function set( ractive, keypath, value, silent ) {
-			var keys, lastKey, parentKeypath, parentValue, wrapper, evaluator, dontTeardownWrapper;
-			if ( isEqual( ractive._cache[ keypath ], value ) ) {
-				return;
-			}
-			wrapper = ractive._wrapped[ keypath ];
-			evaluator = ractive._evaluators[ keypath ];
-			if ( wrapper && wrapper.reset ) {
-				wrapper.reset( value );
-				value = wrapper.get();
-				dontTeardownWrapper = true;
-			}
-			if ( evaluator ) {
-				evaluator.value = value;
-			}
-			if ( !evaluator && ( !wrapper || !wrapper.reset ) ) {
-				keys = keypath.split( '.' );
-				lastKey = keys.pop();
-				parentKeypath = keys.join( '.' );
-				wrapper = ractive._wrapped[ parentKeypath ];
-				if ( wrapper && wrapper.set ) {
-					wrapper.set( lastKey, value );
-				} else {
-					parentValue = wrapper ? wrapper.get() : get( ractive, parentKeypath );
-					if ( !parentValue ) {
-						parentValue = createBranch( lastKey );
-						set( ractive, parentKeypath, parentValue );
-					}
-					parentValue[ lastKey ] = value;
-				}
-			}
-			clearCache( ractive, keypath, dontTeardownWrapper );
-			if ( !silent ) {
-				ractive._changes.push( keypath );
-				notifyDependants( ractive, keypath );
-			}
-		}
-		circular.set = set;
-		return set;
-	}( circular, utils_isEqual, utils_createBranch, shared_clearCache, shared_notifyDependants );
 
 	var shared_get_getFromParent = function( circular, createComponentBinding, set ) {
 
