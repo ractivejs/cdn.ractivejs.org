@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre1 - 2014-03-03
+	Ractive - --96cb6c8-dirty - 2014-03-04
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -8244,7 +8244,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '0.4.0-pre1'
+				value: '--96cb6c8-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
