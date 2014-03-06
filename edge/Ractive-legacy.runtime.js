@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --96cb6c8-dirty - 2014-03-04
+	Ractive - --c7572cb-dirty - 2014-03-06
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -35,7 +35,9 @@
 
 ( function( global ) {
 
-	'use strict';
+
+
+	var noConflict = global.Ractive;
 
 	var legacy = function() {
 
@@ -8543,7 +8545,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--96cb6c8-dirty'
+				value: '--c7572cb-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
@@ -8584,8 +8586,11 @@
 	}
 
 	// ... or as browser global
-	else {
-		global.Ractive = Ractive;
-	}
+	global.Ractive = Ractive;
+
+	Ractive.noConflict = function() {
+		global.Ractive = noConflict;
+		return Ractive;
+	};
 
 }( typeof window !== 'undefined' ? window : this ) );
