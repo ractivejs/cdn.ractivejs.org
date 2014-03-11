@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --c9f8e8f-dirty - 2014-03-11
+	Ractive - --55b9214-dirty - 2014-03-11
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -9416,6 +9416,9 @@
 				if ( !selector || selector === this.name ) {
 					return this.instance;
 				}
+				if ( this.instance.fragment ) {
+					return this.instance.fragment.findComponent( selector );
+				}
 				return null;
 			},
 			findAllComponents: function( selector, query ) {
@@ -10504,7 +10507,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--c9f8e8f-dirty'
+				value: '--55b9214-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
