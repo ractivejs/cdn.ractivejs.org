@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --c7572cb-dirty - 2014-03-06
+	Ractive - --c9f8e8f-dirty - 2014-03-11
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -720,8 +720,8 @@
 
 	var shared_makeTransitionManager = function( removeFromArray ) {
 
-		var makeTransitionManager, checkComplete, remove, init, previous = null;
-		makeTransitionManager = function( callback ) {
+		var makeTransitionManager, checkComplete, remove, init;
+		makeTransitionManager = function( callback, previous ) {
 			var transitionManager = [];
 			transitionManager.detachQueue = [];
 			transitionManager.remove = remove;
@@ -741,8 +741,8 @@
 				if ( typeof this._callback === 'function' ) {
 					this._callback();
 				}
-				if ( this._parent ) {
-					this._parent.remove( this );
+				if ( this._previous ) {
+					this._previous.remove( this );
 				}
 			}
 		};
@@ -787,7 +787,7 @@
 				}
 				if ( !flushing ) {
 					inFlight += 1;
-					transitionManager = makeTransitionManager( callback );
+					transitionManager = makeTransitionManager( callback, transitionManager );
 				}
 			},
 			end: function() {
@@ -2078,9 +2078,9 @@
 
 	var Ractive_prototype_animate__animate = function( isEqual, Promise, normaliseKeypath, animations, get, Animation ) {
 
-		var noAnimation = {
-			stop: function() {}
-		};
+		var noop = function() {}, noAnimation = {
+				stop: noop
+			};
 		return function( keypath, to, options ) {
 			var promise, fulfilPromise, k, animation, animations, easing, duration, step, complete, makeValueCollector, currentValues, collectValue, dummy, dummyOptions;
 			promise = new Promise( function( fulfil ) {
@@ -2114,10 +2114,8 @@
 							if ( step ) {
 								options.step = collectValue;
 							}
-							if ( complete ) {
-								options.complete = collectValue;
-							}
 						}
+						options.complete = complete ? collectValue : noop;
 						animations.push( animate( this, k, keypath[ k ], options ) );
 					}
 				}
@@ -2132,10 +2130,11 @@
 						};
 					}
 					if ( complete ) {
-						dummyOptions.complete = function( t ) {
+						promise.then( function( t ) {
 							complete( t, currentValues );
-						};
+						} );
 					}
+					dummyOptions.complete = fulfilPromise;
 					dummy = animate( this, null, null, dummyOptions );
 					animations.push( dummy );
 				}
@@ -3323,8 +3322,8 @@
 				}
 				if ( !isEqual( value, this.value ) ) {
 					this.value = value;
-					adaptIfNecessary( this.root, this.keypath, value, true );
 					clearCache( this.root, this.keypath );
+					adaptIfNecessary( this.root, this.keypath, value, true );
 					notifyDependants( this.root, this.keypath );
 				}
 				this.evaluating = false;
@@ -8246,7 +8245,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--c7572cb-dirty'
+				value: '--c9f8e8f-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
