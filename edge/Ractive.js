@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --75588b1-dirty - 2014-03-12
+	Ractive - --ca393fb-dirty - 2014-03-12
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -10044,19 +10044,27 @@
 
 		var selectorsPattern = /(?:^|\})?\s*([^\{\}]+)\s*\{/g,
 			commentsPattern = /\/\*.*?\*\//g,
-			pseudoSelectorPattern = /([^:]*)(::?.+)?/;
+			selectorUnitPattern = /((?:(?:\[[^\]+]\])|(?:[^\s\+\>\~:]))+)((?::[^\s\+\>\~]+)?\s*[\s\+\>\~]?)\s*/g;
 		return function transformCss( css, guid ) {
 			var transformed, addGuid;
 			addGuid = function( selector ) {
-				var simpleSelectors, dataAttr, prepended, appended, pseudo, i, transformed = [];
-				simpleSelectors = selector.split( ' ' ).filter( excludeEmpty );
+				var selectorUnits, match, unit, dataAttr, base, prepended, appended, i, transformed = [];
+				selectorUnits = [];
+				while ( match = selectorUnitPattern.exec( selector ) ) {
+					selectorUnits.push( {
+						str: match[ 0 ],
+						base: match[ 1 ],
+						modifiers: match[ 2 ]
+					} );
+				}
 				dataAttr = '[data-rvcguid="' + guid + '"]';
-				i = simpleSelectors.length;
+				base = selectorUnits.map( extractString );
+				i = selectorUnits.length;
 				while ( i-- ) {
-					appended = simpleSelectors.slice();
-					pseudo = pseudoSelectorPattern.exec( appended[ i ] );
-					appended[ i ] = pseudo[ 1 ] + dataAttr + ( pseudo[ 2 ] || '' );
-					prepended = simpleSelectors.slice();
+					appended = base.slice();
+					unit = selectorUnits[ i ];
+					appended[ i ] = unit.base + dataAttr + unit.modifiers || '';
+					prepended = base.slice();
 					prepended[ i ] = dataAttr + ' ' + prepended[ i ];
 					transformed.push( appended.join( ' ' ), prepended.join( ' ' ) );
 				}
@@ -10078,8 +10086,8 @@
 			return str.replace( /^\s+/, '' ).replace( /\s+$/, '' );
 		}
 
-		function excludeEmpty( str ) {
-			return !/^\s*$/.test( str );
+		function extractString( unit ) {
+			return unit.str;
 		}
 	}();
 
@@ -10509,7 +10517,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--75588b1-dirty'
+				value: '--ca393fb-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
