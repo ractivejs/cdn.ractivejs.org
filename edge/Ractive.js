@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --55b9214-dirty - 2014-03-11
+	Ractive - --75588b1-dirty - 2014-03-12
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -6625,6 +6625,7 @@
 			}
 			if ( this.html ) {
 				matchingStaticNodes = getMatchingStaticNodes( this, selector );
+				query.push.apply( query, matchingStaticNodes );
 				if ( query.live && !matchedSelf ) {
 					( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
 				}
@@ -10042,7 +10043,8 @@
 	var extend_utils_transformCss = function() {
 
 		var selectorsPattern = /(?:^|\})?\s*([^\{\}]+)\s*\{/g,
-			pseudoSelectorPattern = /([^:]*)(::?[^:]+)?/;
+			commentsPattern = /\/\*.*?\*\//g,
+			pseudoSelectorPattern = /([^:]*)(::?.+)?/;
 		return function transformCss( css, guid ) {
 			var transformed, addGuid;
 			addGuid = function( selector ) {
@@ -10060,7 +10062,7 @@
 				}
 				return transformed.join( ', ' );
 			};
-			transformed = css.replace( selectorsPattern, function( match, $1 ) {
+			transformed = css.replace( commentsPattern, '' ).replace( selectorsPattern, function( match, $1 ) {
 				var selectors, transformed;
 				selectors = $1.split( ',' ).map( trim );
 				transformed = selectors.map( addGuid ).join( ', ' ) + ' ';
@@ -10507,7 +10509,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--55b9214-dirty'
+				value: '--75588b1-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
