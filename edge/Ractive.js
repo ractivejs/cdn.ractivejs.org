@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --ca393fb-dirty - 2014-03-12
+	Ractive - --dcae3c6-dirty - 2014-03-12
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -57,6 +57,7 @@
 			noIntro: false,
 			transitionsEnabled: true,
 			magic: false,
+			noCssTransform: false,
 			adapt: [],
 			sanitize: false,
 			stripComments: true,
@@ -10104,7 +10105,7 @@
 			} );
 			if ( Parent.css ) {
 				defineProperty( Child, 'css', {
-					value: transformCss( Parent.css, Child._guid )
+					value: Parent.defaults.noCssTransform ? Parent.css : transformCss( Parent.css, Child._guid )
 				} );
 			}
 		};
@@ -10175,7 +10176,7 @@
 			}
 			if ( childProps.css ) {
 				defineProperty( Child, 'css', {
-					value: transformCss( childProps.css, Child._guid )
+					value: Child.defaults.noCssTransform ? childProps.css : transformCss( childProps.css, Child._guid )
 				} );
 			}
 		};
@@ -10517,7 +10518,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--ca393fb-dirty'
+				value: '--dcae3c6-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
