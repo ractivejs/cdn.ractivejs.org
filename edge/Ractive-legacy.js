@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --297c6d9-dirty - 2014-03-19
+	Ractive - --68ad805-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3875,9 +3875,7 @@
 			if ( fragment.indexRefs && fragment.indexRefs[ indexRef ] !== undefined ) {
 				fragment.indexRefs[ indexRef ] = newIndex;
 			}
-			if ( fragment.context && fragment.context.substr( 0, oldKeypath.length ) === oldKeypath ) {
-				fragment.context = fragment.context.replace( oldKeypath, newKeypath );
-			}
+			assignNewKeypath( fragment, 'context', oldKeypath, newKeypath );
 			i = fragment.items.length;
 			while ( i-- ) {
 				item = fragment.items[ i ];
@@ -3903,6 +3901,22 @@
 			}
 		}
 
+		function assignNewKeypath( target, property, oldKeypath, newKeypath ) {
+			if ( !target[ property ] || target[ property ] === newKeypath ) {
+				return;
+			}
+			target[ property ] = getNewKeypath( target[ property ], oldKeypath, newKeypath );
+		}
+
+		function getNewKeypath( targetKeypath, oldKeypath, newKeypath ) {
+			if ( targetKeypath === oldKeypath ) {
+				return newKeypath;
+			}
+			if ( targetKeypath.substr( 0, oldKeypath.length + 1 ) === oldKeypath + '.' ) {
+				return targetKeypath.replace( oldKeypath + '.', newKeypath + '.' );
+			}
+		}
+
 		function reassignElement( element, indexRef, newIndex, oldKeypath, newKeypath ) {
 			var i, attribute, storage, masterEventName, proxies, proxy, binding, bindings, liveQueries, ractive;
 			i = element.attributes.length;
@@ -3916,9 +3930,7 @@
 				}
 			}
 			if ( storage = element.node._ractive ) {
-				if ( storage.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
-					storage.keypath = storage.keypath.replace( oldKeypath, newKeypath );
-				}
+				assignNewKeypath( storage, 'keypath', oldKeypath, newKeypath );
 				if ( indexRef != undefined ) {
 					storage.index[ indexRef ] = newIndex;
 				}
@@ -3958,7 +3970,7 @@
 		}
 
 		function reassignMustache( mustache, indexRef, newIndex, oldKeypath, newKeypath ) {
-			var i;
+			var updated, i;
 			if ( mustache.descriptor.x ) {
 				if ( mustache.expressionResolver ) {
 					mustache.expressionResolver.teardown();
@@ -3966,8 +3978,9 @@
 				mustache.expressionResolver = new ExpressionResolver( mustache );
 			}
 			if ( mustache.keypath ) {
-				if ( mustache.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
-					mustache.resolve( mustache.keypath.replace( oldKeypath, newKeypath ) );
+				updated = getNewKeypath( mustache.keypath, oldKeypath, newKeypath );
+				if ( updated ) {
+					mustache.resolve( updated );
 				}
 			} else if ( indexRef !== undefined && mustache.indexRef === indexRef ) {
 				mustache.value = newIndex;
@@ -10818,7 +10831,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--297c6d9-dirty'
+				value: '--68ad805-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
