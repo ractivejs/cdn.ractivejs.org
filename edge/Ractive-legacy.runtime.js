@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --68ad805-dirty - 2014-03-19
+	Ractive - --30e3309-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1029,7 +1029,9 @@
 			transitionManager._check = checkComplete;
 			transitionManager._callback = callback;
 			transitionManager._previous = previous;
-			previous = transitionManager;
+			if ( previous ) {
+				previous.push( transitionManager );
+			}
 			return transitionManager;
 		};
 		checkComplete = function() {
@@ -8572,7 +8574,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--68ad805-dirty'
+				value: '--30e3309-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
