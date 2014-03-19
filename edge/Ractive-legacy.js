@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --a1ecfc5-dirty - 2014-03-19
+	Ractive - --297c6d9-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1699,73 +1699,24 @@
 				return new MagicWrapper( ractive, property, keypath );
 			}
 		};
-		MagicWrapper = function( ractive, property, keypath ) {
-			var wrapper = this,
-				keys, objKeypath, descriptor, wrappers, oldGet, oldSet, get, set;
+		MagicWrapper = function( ractive, value, keypath ) {
+			var keys, objKeypath, descriptor, siblings;
 			this.magic = true;
 			this.ractive = ractive;
 			this.keypath = keypath;
-			this.value = property;
+			this.value = value;
 			keys = keypath.split( '.' );
 			this.prop = keys.pop();
 			objKeypath = keys.join( '.' );
 			this.obj = objKeypath ? ractive.get( objKeypath ) : ractive.data;
 			descriptor = this.originalDescriptor = Object.getOwnPropertyDescriptor( this.obj, this.prop );
-			if ( descriptor && descriptor.set && ( wrappers = descriptor.set._ractiveWrappers ) ) {
-				if ( wrappers.indexOf( this ) === -1 ) {
-					wrappers.push( this );
+			if ( descriptor && descriptor.set && ( siblings = descriptor.set._ractiveWrappers ) ) {
+				if ( siblings.indexOf( this ) === -1 ) {
+					siblings.push( this );
 				}
 				return;
 			}
-			if ( descriptor && !descriptor.configurable ) {
-				if ( this.prop === 'length' ) {
-					return;
-				}
-				throw new Error( 'Cannot use magic mode with property "' + this.prop + '" - object is not configurable' );
-			}
-			if ( descriptor ) {
-				oldGet = descriptor.get;
-				oldSet = descriptor.set;
-			}
-			get = oldGet || function() {
-				return wrapper.value;
-			};
-			set = function( value ) {
-				var wrappers, wrapper, len, i;
-				if ( oldSet ) {
-					oldSet( value );
-				}
-				if ( oldGet ) {
-					value = oldGet();
-				}
-				wrappers = set._ractiveWrappers;
-				len = wrappers.length;
-				i = len;
-				while ( i-- ) {
-					wrappers[ i ].value = value;
-				}
-				i = len;
-				while ( i-- ) {
-					wrapper = wrappers[ i ];
-					if ( wrapper.updating ) {
-						continue;
-					}
-					wrapper.updating = true;
-					runloop.start( wrapper.ractive );
-					wrapper.ractive._changes.push( wrapper.keypath );
-					clearCache( wrapper.ractive, wrapper.keypath );
-					notifyDependants( wrapper.ractive, wrapper.keypath );
-					runloop.end();
-					wrapper.updating = false;
-				}
-			};
-			set._ractiveWrappers = [ this ];
-			Object.defineProperty( this.obj, this.prop, {
-				get: get,
-				set: set,
-				enumerable: true,
-				configurable: true
-			} );
+			createAccessors( this, value, descriptor );
 		};
 		MagicWrapper.prototype = {
 			get: function() {
@@ -1817,6 +1768,56 @@
 				}
 			}
 		};
+
+		function createAccessors( originalWrapper, value, descriptor ) {
+			var object, property, oldGet, oldSet, get, set;
+			object = originalWrapper.obj;
+			property = originalWrapper.prop;
+			if ( descriptor && !descriptor.configurable ) {
+				if ( property === 'length' ) {
+					return;
+				}
+				throw new Error( 'Cannot use magic mode with property "' + property + '" - object is not configurable' );
+			}
+			if ( descriptor ) {
+				oldGet = descriptor.get;
+				oldSet = descriptor.set;
+			}
+			get = oldGet || function() {
+				return value;
+			};
+			set = function( v ) {
+				if ( oldSet ) {
+					oldSet( v );
+				}
+				value = oldGet ? oldGet() : v;
+				set._ractiveWrappers.forEach( updateWrapper );
+			};
+
+			function updateWrapper( wrapper ) {
+				var keypath, ractive;
+				wrapper.value = value;
+				if ( wrapper.updating ) {
+					return;
+				}
+				ractive = wrapper.ractive;
+				keypath = wrapper.keypath;
+				wrapper.updating = true;
+				runloop.start( ractive );
+				ractive._changes.push( keypath );
+				clearCache( ractive, keypath );
+				notifyDependants( ractive, keypath );
+				runloop.end();
+				wrapper.updating = false;
+			}
+			set._ractiveWrappers = [ originalWrapper ];
+			Object.defineProperty( object, property, {
+				get: get,
+				set: set,
+				enumerable: true,
+				configurable: true
+			} );
+		}
 		return magicAdaptor;
 	}( global_runloop, utils_createBranch, utils_isArray, shared_clearCache, shared_notifyDependants );
 
@@ -10817,7 +10818,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--a1ecfc5-dirty'
+				value: '--297c6d9-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
