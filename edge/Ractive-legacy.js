@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --dcae3c6-dirty - 2014-03-12
+	Ractive - --1e05731-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3918,7 +3918,7 @@
 				if ( storage.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
 					storage.keypath = storage.keypath.replace( oldKeypath, newKeypath );
 				}
-				if ( indexRef !== undefined ) {
+				if ( indexRef != undefined ) {
 					storage.index[ indexRef ] = newIndex;
 				}
 				for ( masterEventName in storage.events ) {
@@ -10817,7 +10817,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--dcae3c6-dirty'
+				value: '--1e05731-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
