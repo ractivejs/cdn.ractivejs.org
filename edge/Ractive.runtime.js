@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --30e3309-dirty - 2014-03-19
+	Ractive - --d2db5fe-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -7027,7 +7027,6 @@
 			if ( docFrag ) {
 				instance.insert( docFrag );
 				instance.fragment.pNode = instance.el = parentFragment.pNode;
-				instance.fragment.parent = parentFragment;
 			}
 			return instance;
 		};
@@ -8275,7 +8274,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--30e3309-dirty'
+				value: '--d2db5fe-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
