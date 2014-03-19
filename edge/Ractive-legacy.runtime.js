@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --1e05731-dirty - 2014-03-19
+	Ractive - --a1ecfc5-dirty - 2014-03-19
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3968,7 +3968,7 @@
 				if ( mustache.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
 					mustache.resolve( mustache.keypath.replace( oldKeypath, newKeypath ) );
 				}
-			} else if ( mustache.indexRef === indexRef ) {
+			} else if ( indexRef !== undefined && mustache.indexRef === indexRef ) {
 				mustache.value = newIndex;
 				mustache.render( newIndex );
 			}
@@ -8558,7 +8558,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--1e05731-dirty'
+				value: '--a1ecfc5-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
