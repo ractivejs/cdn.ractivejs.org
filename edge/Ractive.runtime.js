@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --d2db5fe-dirty - 2014-03-19
+	Ractive - --ec90551-dirty - 2014-03-20
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -7018,7 +7018,7 @@
 				append: true,
 				data: data,
 				partials: partials,
-				magic: root.magic,
+				magic: root.magic || Component.defaults.magic,
 				modifyArrays: root.modifyArrays,
 				_parent: root,
 				_component: component,
@@ -8274,7 +8274,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--d2db5fe-dirty'
+				value: '--ec90551-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
