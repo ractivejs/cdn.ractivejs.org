@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --65bf934-dirty - 2014-03-20
+	Ractive - --146ba0f-dirty - 2014-03-20
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -915,7 +915,6 @@
 
 		function flushChanges() {
 			var thing, upstreamChanges, i;
-			attemptKeypathResolution();
 			i = instances.length;
 			while ( i-- ) {
 				thing = instances[ i ];
@@ -924,6 +923,7 @@
 					notifyDependants.multiple( thing, upstreamChanges, true );
 				}
 			}
+			attemptKeypathResolution();
 			while ( dirty ) {
 				dirty = false;
 				while ( thing = evaluators.pop() ) {
@@ -8280,7 +8280,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--65bf934-dirty'
+				value: '--146ba0f-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
