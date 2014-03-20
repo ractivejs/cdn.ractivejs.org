@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --ec90551-dirty - 2014-03-20
+	Ractive - --65bf934-dirty - 2014-03-20
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3575,10 +3575,10 @@
 			if ( fragment.html !== undefined ) {
 				return;
 			}
-			if ( fragment.indexRefs && fragment.indexRefs[ indexRef ] !== undefined ) {
+			assignNewKeypath( fragment, 'context', oldKeypath, newKeypath );
+			if ( fragment.indexRefs && fragment.indexRefs[ indexRef ] !== undefined && fragment.indexRefs[ indexRef ] !== newIndex ) {
 				fragment.indexRefs[ indexRef ] = newIndex;
 			}
-			assignNewKeypath( fragment, 'context', oldKeypath, newKeypath );
 			i = fragment.items.length;
 			while ( i-- ) {
 				item = fragment.items[ i ];
@@ -3983,6 +3983,12 @@
 	var render_DomFragment_Section_reassignFragments = function( reassignFragment ) {
 
 		return function( section, start, end, by ) {
+			if ( start + by === end ) {
+				return;
+			}
+			if ( start === end ) {
+				return;
+			}
 			var i, fragment, indexRef, oldIndex, newIndex, oldKeypath, newKeypath;
 			indexRef = section.descriptor.i;
 			for ( i = start; i < end; i += 1 ) {
@@ -10533,7 +10539,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--ec90551-dirty'
+				value: '--65bf934-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
