@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --1aff3c2-dirty - 2014-03-21
+	Ractive - --a07c0d0-dirty - 2014-03-21
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3904,17 +3904,25 @@
 		}
 
 		function assignNewKeypath( target, property, oldKeypath, newKeypath ) {
-			if ( !target[ property ] || target[ property ] === newKeypath ) {
+			if ( !target[ property ] || startsWith( target[ property ], newKeypath ) ) {
 				return;
 			}
 			target[ property ] = getNewKeypath( target[ property ], oldKeypath, newKeypath );
+		}
+
+		function startsWith( target, keypath ) {
+			return target === keypath || startsWithKeypath( target, keypath );
+		}
+
+		function startsWithKeypath( target, keypath ) {
+			return target.substr( 0, keypath.length + 1 ) === keypath + '.';
 		}
 
 		function getNewKeypath( targetKeypath, oldKeypath, newKeypath ) {
 			if ( targetKeypath === oldKeypath ) {
 				return newKeypath;
 			}
-			if ( targetKeypath.substr( 0, oldKeypath.length + 1 ) === oldKeypath + '.' ) {
+			if ( startsWithKeypath( targetKeypath, oldKeypath ) ) {
 				return targetKeypath.replace( oldKeypath + '.', newKeypath + '.' );
 			}
 		}
@@ -10838,7 +10846,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--1aff3c2-dirty'
+				value: '--a07c0d0-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
