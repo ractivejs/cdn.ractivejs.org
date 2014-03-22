@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --05fdbfa-dirty - 2014-03-22
+	Ractive - --d23e408-dirty - 2014-03-22
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -8289,7 +8289,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--05fdbfa-dirty'
+				value: '--d23e408-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
