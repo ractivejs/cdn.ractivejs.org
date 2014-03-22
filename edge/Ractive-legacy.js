@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --a07c0d0-dirty - 2014-03-21
+	Ractive - --05fdbfa-dirty - 2014-03-22
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -779,7 +779,7 @@
 	var shared_getValueFromCheckboxes = function( ractive, keypath ) {
 		var value, checkboxes, checkbox, len, i, rootEl;
 		value = [];
-		rootEl = ractive.rendered ? ractive.el : ractive.fragment.docFrag;
+		rootEl = ractive._rendering ? ractive.fragment.docFrag : ractive.el;
 		checkboxes = rootEl.querySelectorAll( 'input[type="checkbox"][name="{{' + keypath + '}}"]' );
 		len = checkboxes.length;
 		for ( i = 0; i < len; i += 1 ) {
@@ -9998,6 +9998,7 @@
 	var Ractive_prototype_render = function( runloop, css, DomFragment ) {
 
 		return function Ractive_prototype_render( target, callback ) {
+			this._rendering = true;
 			runloop.start( this, callback );
 			if ( !this._initing ) {
 				throw new Error( 'You cannot call ractive.render() directly!' );
@@ -10014,11 +10015,11 @@
 			if ( target ) {
 				target.appendChild( this.fragment.docFrag );
 			}
-			this.rendered = true;
-			runloop.end();
-			if ( !this._parent ) {
+			if ( !this._parent || !this._parent._rendering ) {
 				initChildren( this );
 			}
+			delete this._rendering;
+			runloop.end();
 		};
 
 		function initChildren( instance ) {
@@ -10751,7 +10752,7 @@
 				child.beforeInit( options );
 			}
 			initialise( child, options );
-			if ( options._parent && !options._parent.rendered ) {
+			if ( options._parent && options._parent._rendering ) {
 				options._parent._childInitQueue.push( {
 					instance: child,
 					options: options
@@ -10846,7 +10847,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--a07c0d0-dirty'
+				value: '--05fdbfa-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
