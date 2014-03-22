@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --d23e408-dirty - 2014-03-22
+	Ractive - --161ef47-dirty - 2014-03-22
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1452,14 +1452,15 @@
 			wrapper = ractive._wrapped[ keypath ];
 			evaluator = ractive._evaluators[ keypath ];
 			if ( wrapper && wrapper.reset ) {
-				wrapper.reset( value );
-				value = wrapper.get();
-				dontTeardownWrapper = true;
+				dontTeardownWrapper = wrapper.reset( value ) !== false;
+				if ( dontTeardownWrapper ) {
+					value = wrapper.get();
+				}
 			}
 			if ( evaluator ) {
 				evaluator.value = value;
 			}
-			if ( !evaluator && ( !wrapper || !wrapper.reset ) ) {
+			if ( !evaluator && !dontTeardownWrapper ) {
 				keys = keypath.split( '.' );
 				lastKey = keys.pop();
 				parentKeypath = keys.join( '.' );
@@ -10847,7 +10848,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--d23e408-dirty'
+				value: '--161ef47-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
