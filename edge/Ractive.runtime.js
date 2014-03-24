@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --15c1f17-dirty - 2014-03-24
+	Ractive - --73a5ce4-dirty - 2014-03-24
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3434,13 +3434,11 @@
 			this.root = ractive;
 			this.callback = callback;
 			this.owner = owner;
+			this.str = expression.s;
 			this.args = args = [];
-			this.resolvers = [];
 			this.unresolved = [];
 			this.pending = 0;
-			this.watchers = [];
 			indexRefs = parentFragment.indexRefs;
-			this.str = expression.s;
 			if ( !expression.r || !expression.r.length ) {
 				this.resolved = this.ready = true;
 				this.bubble();
@@ -8446,7 +8444,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--15c1f17-dirty'
+				value: '--73a5ce4-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
