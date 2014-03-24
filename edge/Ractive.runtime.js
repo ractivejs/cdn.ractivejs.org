@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --69f2da2-dirty - 2014-03-23
+	Ractive - --15c1f17-dirty - 2014-03-24
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3182,6 +3182,23 @@
 		};
 	}( global_runloop, shared_unregisterDependant );
 
+	var shared_Unresolved = function( runloop ) {
+
+		var Unresolved = function( ractive, ref, parentFragment, callback ) {
+			this.root = ractive;
+			this.ref = ref;
+			this.parentFragment = parentFragment;
+			this.resolve = callback;
+			runloop.addUnresolved( this );
+		};
+		Unresolved.prototype = {
+			teardown: function() {
+				runloop.removeUnresolved( this );
+			}
+		};
+		return Unresolved;
+	}( global_runloop );
+
 	var render_shared_Evaluator_Reference = function( types, isEqual, defineProperty, registerDependant, unregisterDependant ) {
 
 		var Reference, thisPattern;
@@ -3292,27 +3309,25 @@
 
 		var Evaluator, cache = {};
 		Evaluator = function( root, keypath, uniqueString, functionStr, args, priority ) {
-			var i, arg;
-			this.root = root;
-			this.uniqueString = uniqueString;
-			this.keypath = keypath;
-			this.priority = priority;
-			this.fn = getFunctionFromString( functionStr, args.length );
-			this.values = [];
-			this.refs = [];
-			i = args.length;
-			while ( i-- ) {
-				if ( arg = args[ i ] ) {
-					if ( arg[ 0 ] ) {
-						this.values[ i ] = arg[ 1 ];
-					} else {
-						this.refs.push( new Reference( root, arg[ 1 ], this, i, priority ) );
-					}
-				} else {
-					this.values[ i ] = undefined;
+			var evaluator = this;
+			evaluator.root = root;
+			evaluator.uniqueString = uniqueString;
+			evaluator.keypath = keypath;
+			evaluator.priority = priority;
+			evaluator.fn = getFunctionFromString( functionStr, args.length );
+			evaluator.values = [];
+			evaluator.refs = [];
+			args.forEach( function( arg, i ) {
+				if ( !arg ) {
+					return;
 				}
-			}
-			this.selfUpdating = this.refs.length <= 1;
+				if ( arg.isIndexRef ) {
+					evaluator.values[ i ] = arg.value;
+				} else {
+					evaluator.refs.push( new Reference( root, arg.keypath, evaluator, i, priority ) );
+				}
+			} );
+			evaluator.selfUpdating = evaluator.refs.length <= 1;
 		};
 		Evaluator.prototype = {
 			bubble: function() {
@@ -3410,96 +3425,50 @@
 		}
 	}( global_runloop, utils_warn, utils_isEqual, shared_clearCache, shared_notifyDependants, shared_adaptIfNecessary, render_shared_Evaluator_Reference, render_shared_Evaluator_SoftReference );
 
-	var render_shared_ExpressionResolver_ReferenceScout = function( runloop, resolveRef, teardown ) {
+	var render_shared_Resolvers_ExpressionResolver = function( removeFromArray, resolveRef, Unresolved, Evaluator ) {
 
-		var ReferenceScout = function( resolver, ref, parentFragment, argNum ) {
-			var keypath, ractive;
-			ractive = this.root = resolver.root;
-			this.ref = ref;
-			this.parentFragment = parentFragment;
-			keypath = resolveRef( ractive, ref, parentFragment );
-			if ( keypath !== undefined ) {
-				resolver.resolve( argNum, false, keypath );
-			} else {
-				this.argNum = argNum;
-				this.resolver = resolver;
-				runloop.addUnresolved( this );
-			}
-		};
-		ReferenceScout.prototype = {
-			resolve: function( keypath ) {
-				this.keypath = keypath;
-				this.resolver.resolve( this.argNum, false, keypath );
-			},
-			teardown: function() {
-				if ( !this.keypath ) {
-					teardown( this );
-				}
-			}
-		};
-		return ReferenceScout;
-	}( global_runloop, shared_resolveRef, shared_teardown );
-
-	var render_shared_ExpressionResolver_getUniqueString = function( str, args ) {
-		return str.replace( /\$\{([0-9]+)\}/g, function( match, $1 ) {
-			return args[ $1 ] ? args[ $1 ][ 1 ] : 'undefined';
-		} );
-	};
-
-	var render_shared_ExpressionResolver_isRegularKeypath = function() {
-
-		var keyPattern = /^(?:(?:[a-zA-Z$_][a-zA-Z$_0-9]*)|(?:[0-9]|[1-9][0-9]+))$/;
-		return function( keypath ) {
-			var keys, key, i;
-			keys = keypath.split( '.' );
-			i = keys.length;
-			while ( i-- ) {
-				key = keys[ i ];
-				if ( key === 'undefined' || !keyPattern.test( key ) ) {
-					return false;
-				}
-			}
-			return true;
-		};
-	}();
-
-	var render_shared_ExpressionResolver_getKeypath = function( normaliseKeypath, isRegularKeypath ) {
-
-		return function( uniqueString ) {
-			var normalised;
-			normalised = normaliseKeypath( uniqueString );
-			if ( isRegularKeypath( normalised ) ) {
-				return normalised;
-			}
-			return '${' + normalised.replace( /[\.\[\]]/g, '-' ) + '}';
-		};
-	}( utils_normaliseKeypath, render_shared_ExpressionResolver_isRegularKeypath );
-
-	var render_shared_ExpressionResolver__ExpressionResolver = function( Evaluator, ReferenceScout, getUniqueString, getKeypath ) {
-
-		var ExpressionResolver = function( mustache ) {
-			var expression, i, len, ref, indexRefs;
-			this.root = mustache.root;
-			this.mustache = mustache;
-			this.args = [];
-			this.scouts = [];
-			expression = mustache.descriptor.x;
-			indexRefs = mustache.parentFragment.indexRefs;
+		var ExpressionResolver = function( owner, parentFragment, expression, callback ) {
+			var expressionResolver = this,
+				ractive, indexRefs, args;
+			ractive = owner.root;
+			this.root = ractive;
+			this.callback = callback;
+			this.owner = owner;
+			this.args = args = [];
+			this.resolvers = [];
+			this.unresolved = [];
+			this.pending = 0;
+			this.watchers = [];
+			indexRefs = parentFragment.indexRefs;
 			this.str = expression.s;
-			len = this.unresolved = this.args.length = expression.r ? expression.r.length : 0;
-			if ( !len ) {
+			if ( !expression.r || !expression.r.length ) {
 				this.resolved = this.ready = true;
 				this.bubble();
 				return;
 			}
-			for ( i = 0; i < len; i += 1 ) {
-				ref = expression.r[ i ];
-				if ( indexRefs && indexRefs[ ref ] !== undefined ) {
-					this.resolve( i, true, indexRefs[ ref ] );
-				} else {
-					this.scouts.push( new ReferenceScout( this, ref, mustache.parentFragment, i ) );
+			expression.r.forEach( function( reference, i ) {
+				var index, keypath, unresolved;
+				if ( indexRefs && ( index = indexRefs[ reference ] ) !== undefined ) {
+					args[ i ] = {
+						isIndexRef: true,
+						value: index
+					};
+					return;
 				}
-			}
+				if ( keypath = resolveRef( ractive, reference, parentFragment ) ) {
+					args[ i ] = {
+						keypath: keypath
+					};
+					return;
+				}
+				args[ i ] = undefined;
+				expressionResolver.pending += 1;
+				unresolved = new Unresolved( ractive, reference, parentFragment, function( keypath ) {
+					expressionResolver.resolve( i, keypath );
+					removeFromArray( expressionResolver.unresolved, unresolved );
+				} );
+				expressionResolver.unresolved.push( unresolved );
+			} );
 			this.ready = true;
 			this.bubble();
 		};
@@ -3512,28 +3481,26 @@
 				oldKeypath = this.keypath;
 				this.uniqueString = getUniqueString( this.str, this.args );
 				this.keypath = getKeypath( this.uniqueString );
-				if ( this.keypath.substr( 0, 2 ) === '${' ) {
-					this.createEvaluator();
-				}
-				this.mustache.resolve( this.keypath );
+				this.createEvaluator();
+				this.callback( this.keypath );
 			},
 			teardown: function() {
-				while ( this.scouts.length ) {
-					this.scouts.pop().teardown();
+				var unresolved;
+				while ( unresolved = this.unresolved.pop() ) {
+					unresolved.teardown();
 				}
 			},
-			resolve: function( argNum, isIndexRef, value ) {
-				this.args[ argNum ] = [
-					isIndexRef,
-					value
-				];
+			resolve: function( index, keypath ) {
+				this.args[ index ] = {
+					keypath: keypath
+				};
 				this.bubble();
-				this.resolved = !--this.unresolved;
+				this.resolved = !--this.pending;
 			},
 			createEvaluator: function() {
 				var evaluator;
 				if ( !this.root._evaluators[ this.keypath ] ) {
-					evaluator = new Evaluator( this.root, this.keypath, this.uniqueString, this.str, this.args, this.mustache.priority );
+					evaluator = new Evaluator( this.root, this.keypath, this.uniqueString, this.str, this.args, this.owner.priority );
 					this.root._evaluators[ this.keypath ] = evaluator;
 					evaluator.update();
 				} else {
@@ -3542,42 +3509,169 @@
 			}
 		};
 		return ExpressionResolver;
-	}( render_shared_Evaluator__Evaluator, render_shared_ExpressionResolver_ReferenceScout, render_shared_ExpressionResolver_getUniqueString, render_shared_ExpressionResolver_getKeypath );
 
-	var render_shared_initMustache = function( runloop, resolveRef, ExpressionResolver ) {
+		function getUniqueString( str, args ) {
+			return str.replace( /\$\{([0-9]+)\}/g, function( match, $1 ) {
+				return args[ $1 ] ? args[ $1 ].value || args[ $1 ].keypath : 'undefined';
+			} );
+		}
+
+		function getKeypath( uniqueString ) {
+			return '${' + uniqueString.replace( /[\.\[\]]/g, '-' ) + '}';
+		}
+	}( utils_removeFromArray, shared_resolveRef, shared_Unresolved, render_shared_Evaluator__Evaluator );
+
+	var render_shared_Resolvers_KeypathExpressionResolver = function( types, removeFromArray, resolveRef, Unresolved, registerDependant, unregisterDependant, ExpressionResolver ) {
+
+		var KeypathExpressionResolver = function( mustache, descriptor, callback ) {
+			var resolver = this,
+				ractive, parentFragment, keypath, dynamic, members;
+			ractive = mustache.root;
+			parentFragment = mustache.parentFragment;
+			this.ref = descriptor.r;
+			this.root = mustache.root;
+			this.mustache = mustache;
+			this.callback = callback;
+			this.pending = 0;
+			this.unresolved = [];
+			members = this.members = [];
+			this.keypathObservers = [];
+			this.expressionResolvers = [];
+			descriptor.m.forEach( function( member, i ) {
+				var ref, indexRefs, index, createKeypathObserver, unresolved, expressionResolver;
+				if ( typeof member === 'string' ) {
+					resolver.members[ i ] = member;
+					return;
+				}
+				if ( member.t === types.REFERENCE ) {
+					ref = member.n;
+					indexRefs = parentFragment.indexRefs;
+					if ( indexRefs && ( index = indexRefs[ ref ] ) !== undefined ) {
+						members[ i ] = index;
+						return;
+					}
+					dynamic = true;
+					createKeypathObserver = function( keypath ) {
+						var keypathObserver = new KeypathObserver( ractive, keypath, mustache.priority, resolver, i );
+						resolver.keypathObservers.push( keypathObserver );
+					};
+					if ( keypath = resolveRef( ractive, ref, parentFragment ) ) {
+						createKeypathObserver( keypath );
+						return;
+					}
+					members[ i ] = undefined;
+					resolver.pending += 1;
+					unresolved = new Unresolved( ractive, ref, parentFragment, function( keypath ) {
+						resolver.resolve( i, keypath );
+						removeFromArray( resolver.unresolved, unresolved );
+					} );
+					resolver.unresolved.push( unresolved );
+					return null;
+				}
+				dynamic = true;
+				resolver.pending += 1;
+				expressionResolver = new ExpressionResolver( resolver, parentFragment, member, function( keypath ) {
+					resolver.resolve( i, keypath );
+					removeFromArray( resolver.unresolved, expressionResolver );
+				} );
+				resolver.unresolved.push( expressionResolver );
+			} );
+			if ( !dynamic ) {
+				keypath = this.getKeypath();
+				callback( keypath );
+				return;
+			}
+			this.ready = true;
+			this.bubble();
+		};
+		KeypathExpressionResolver.prototype = {
+			getKeypath: function() {
+				return this.ref + '.' + this.members.join( '.' );
+			},
+			bubble: function() {
+				if ( !this.ready || this.pending ) {
+					return;
+				}
+				this.callback( this.getKeypath() );
+			},
+			resolve: function( index, value ) {
+				var keypathObserver = new KeypathObserver( this.root, value, this.mustache.priority, this, index );
+				keypathObserver.update();
+				this.keypathObservers.push( keypathObserver );
+				this.resolved = !--this.pending;
+				this.bubble();
+			},
+			teardown: function() {
+				var unresolved;
+				while ( unresolved = this.unresolved.pop() ) {
+					unresolved.teardown();
+				}
+			}
+		};
+		var KeypathObserver = function( ractive, keypath, priority, resolver, index ) {
+			this.root = ractive;
+			this.keypath = keypath;
+			this.priority = priority;
+			this.resolver = resolver;
+			this.index = index;
+			registerDependant( this );
+			this.update();
+		};
+		KeypathObserver.prototype = {
+			update: function() {
+				var resolver = this.resolver;
+				resolver.members[ this.index ] = this.root.get( this.keypath );
+				resolver.bubble();
+			},
+			teardown: function() {
+				unregisterDependant( this );
+			}
+		};
+		return KeypathExpressionResolver;
+	}( config_types, utils_removeFromArray, shared_resolveRef, shared_Unresolved, shared_registerDependant, shared_unregisterDependant, render_shared_Resolvers_ExpressionResolver );
+
+	var render_shared_initMustache = function( runloop, resolveRef, KeypathExpressionResolver, ExpressionResolver ) {
 
 		return function initMustache( mustache, options ) {
-			var keypath, indexRef, parentFragment;
-			parentFragment = mustache.parentFragment = options.parentFragment;
+			var ref, keypath, indexRefs, index, parentFragment, descriptor, resolve;
+			parentFragment = options.parentFragment;
+			descriptor = options.descriptor;
 			mustache.root = parentFragment.root;
+			mustache.parentFragment = parentFragment;
 			mustache.descriptor = options.descriptor;
 			mustache.index = options.index || 0;
 			mustache.priority = parentFragment.priority;
 			mustache.type = options.descriptor.t;
-			if ( options.descriptor.r ) {
-				if ( parentFragment.indexRefs && parentFragment.indexRefs[ options.descriptor.r ] !== undefined ) {
-					indexRef = parentFragment.indexRefs[ options.descriptor.r ];
-					mustache.indexRef = options.descriptor.r;
-					mustache.value = indexRef;
+			resolve = function( keypath ) {
+				mustache.resolve( keypath );
+			};
+			if ( ref = descriptor.r ) {
+				indexRefs = parentFragment.indexRefs;
+				if ( indexRefs && ( index = indexRefs[ ref ] ) !== undefined ) {
+					mustache.indexRef = ref;
+					mustache.value = index;
 					mustache.render( mustache.value );
 				} else {
-					keypath = resolveRef( mustache.root, options.descriptor.r, mustache.parentFragment );
+					keypath = resolveRef( mustache.root, ref, mustache.parentFragment );
 					if ( keypath !== undefined ) {
-						mustache.resolve( keypath );
+						resolve( keypath );
 					} else {
-						mustache.ref = options.descriptor.r;
+						mustache.ref = ref;
 						runloop.addUnresolved( mustache );
 					}
 				}
 			}
 			if ( options.descriptor.x ) {
-				mustache.expressionResolver = new ExpressionResolver( mustache );
+				mustache.resolver = new ExpressionResolver( mustache, parentFragment, options.descriptor.x, resolve );
+			}
+			if ( options.descriptor.kx ) {
+				mustache.resolver = new KeypathExpressionResolver( mustache, options.descriptor.kx, resolve );
 			}
 			if ( mustache.descriptor.n && !mustache.hasOwnProperty( 'value' ) ) {
 				mustache.render( undefined );
 			}
 		};
-	}( global_runloop, shared_resolveRef, render_shared_ExpressionResolver__ExpressionResolver );
+	}( global_runloop, shared_resolveRef, render_shared_Resolvers_KeypathExpressionResolver, render_shared_Resolvers_ExpressionResolver );
 
 	var shared_reassignFragment_utils_startsWithKeypath = function startsWithKeypath( target, keypath ) {
 		return target.substr( 0, keypath.length + 1 ) === keypath + '.';
@@ -3621,10 +3715,12 @@
 		return function reassignMustache( mustache, indexRef, newIndex, oldKeypath, newKeypath ) {
 			var updated, i;
 			if ( mustache.descriptor.x ) {
-				if ( mustache.expressionResolver ) {
-					mustache.expressionResolver.teardown();
+				if ( mustache.resolver ) {
+					mustache.resolver.teardown();
 				}
-				mustache.expressionResolver = new ExpressionResolver( mustache );
+				mustache.resolver = new ExpressionResolver( mustache, mustache.parentFragment, mustache.descriptor.x, function( keypath ) {
+					mustache.resolve( keypath );
+				} );
 			}
 			if ( mustache.keypath ) {
 				updated = getNewKeypath( mustache.keypath, oldKeypath, newKeypath );
@@ -3642,7 +3738,7 @@
 				}
 			}
 		};
-	}( circular, shared_reassignFragment_utils_getNewKeypath, render_shared_ExpressionResolver__ExpressionResolver );
+	}( circular, shared_reassignFragment_utils_getNewKeypath, render_shared_Resolvers_ExpressionResolver );
 
 	var shared_reassignFragment_reassignElement = function( circular, assignNewKeypath ) {
 
@@ -8350,7 +8446,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--69f2da2-dirty'
+				value: '--15c1f17-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
