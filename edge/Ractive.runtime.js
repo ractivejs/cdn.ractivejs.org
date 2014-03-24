@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --8138c50-dirty - 2014-03-24
+	Ractive - --caaaff6-dirty - 2014-03-24
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -1193,7 +1193,7 @@
 					parentValue = wrapper ? wrapper.get() : get( ractive, parentKeypath );
 					if ( !parentValue ) {
 						parentValue = createBranch( lastKey );
-						set( ractive, parentKeypath, parentValue );
+						set( ractive, parentKeypath, parentValue, true );
 					}
 					parentValue[ lastKey ] = value;
 				}
@@ -8234,7 +8234,7 @@
 		return Watcher;
 	}( utils_isEqual, shared_registerDependant, shared_unregisterDependant );
 
-	var Ractive_initialise_computations_Computation = function( runloop, set, Watcher ) {
+	var Ractive_initialise_computations_Computation = function( warn, runloop, set, Watcher ) {
 
 		var Computation = function( ractive, key, signature ) {
 			this.ractive = ractive;
@@ -8256,19 +8256,28 @@
 				this.setter.call( this.ractive, value );
 			},
 			update: function() {
-				var ractive, originalCaptured, result;
+				var ractive, originalCaptured, result, errored;
 				ractive = this.ractive;
 				originalCaptured = ractive._captured;
 				if ( !originalCaptured ) {
 					ractive._captured = [];
 				}
-				result = this.getter.call( ractive );
+				try {
+					result = this.getter.call( ractive );
+				} catch ( err ) {
+					if ( ractive.debug ) {
+						warn( 'Failed to compute "' + this.key + '": ' + err.message || err );
+					}
+					errored = true;
+				}
 				diff( this, this.watchers, ractive._captured );
 				ractive._captured = originalCaptured;
-				this.setting = true;
-				this.value = result;
-				set( ractive, this.key, result );
-				this.setting = false;
+				if ( !errored ) {
+					this.setting = true;
+					this.value = result;
+					set( ractive, this.key, result );
+					this.setting = false;
+				}
 				this.deferred = false;
 			},
 			bubble: function() {
@@ -8302,7 +8311,7 @@
 			}
 		}
 		return Computation;
-	}( global_runloop, shared_set, Ractive_initialise_computations_Watcher );
+	}( utils_warn, global_runloop, shared_set, Ractive_initialise_computations_Watcher );
 
 	var Ractive_initialise_computations_createComputations = function( hasOwnProperty, getComputationSignature, Computation ) {
 
@@ -8604,7 +8613,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--8138c50-dirty'
+				value: '--caaaff6-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
