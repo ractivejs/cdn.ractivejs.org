@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --73a5ce4-dirty - 2014-03-24
+	Ractive - --8138c50-dirty - 2014-03-24
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -69,7 +69,8 @@
 			tripleDelimiters: [
 				'{{{',
 				'}}}'
-			]
+			],
+			computed: null
 		};
 		initOptions = {
 			keys: Object.keys( defaults ),
@@ -775,7 +776,9 @@
 			transitions = [],
 			observers = [],
 			attributes = [],
+			activeBindings = [],
 			evaluators = [],
+			computations = [],
 			selectValues = [],
 			checkboxKeypaths = {}, checkboxes = [],
 			radios = [],
@@ -837,6 +840,10 @@
 			addAttribute: function( attribute ) {
 				attributes.push( attribute );
 			},
+			addBinding: function( binding ) {
+				binding.active = true;
+				activeBindings.push( binding );
+			},
 			scheduleCssUpdate: function() {
 				if ( !inFlight && !flushing ) {
 					css.update();
@@ -847,6 +854,10 @@
 			addEvaluator: function( evaluator ) {
 				dirty = true;
 				evaluators.push( evaluator );
+			},
+			addComputation: function( thing ) {
+				dirty = true;
+				computations.push( thing );
 			},
 			addSelectValue: function( selectValue ) {
 				dirty = true;
@@ -897,6 +908,9 @@
 			while ( thing = observers.pop() ) {
 				thing.update();
 			}
+			while ( thing = activeBindings.pop() ) {
+				thing.active = false;
+			}
 			while ( thing = instances.pop() ) {
 				instances[ thing._guid ] = false;
 				if ( thing._changes.length ) {
@@ -926,6 +940,9 @@
 			attemptKeypathResolution();
 			while ( dirty ) {
 				dirty = false;
+				while ( thing = computations.pop() ) {
+					thing.update();
+				}
 				while ( thing = evaluators.pop() ) {
 					thing.update().deferred = false;
 				}
@@ -1146,12 +1163,16 @@
 		} );
 
 		function set( ractive, keypath, value, silent ) {
-			var keys, lastKey, parentKeypath, parentValue, wrapper, evaluator, dontTeardownWrapper;
+			var keys, lastKey, parentKeypath, parentValue, computation, wrapper, evaluator, dontTeardownWrapper;
 			if ( isEqual( ractive._cache[ keypath ], value ) ) {
 				return;
 			}
+			computation = ractive._computations[ keypath ];
 			wrapper = ractive._wrapped[ keypath ];
 			evaluator = ractive._evaluators[ keypath ];
+			if ( computation && !computation.setting ) {
+				computation.set( value );
+			}
 			if ( wrapper && wrapper.reset ) {
 				dontTeardownWrapper = wrapper.reset( value ) !== false;
 				if ( dontTeardownWrapper ) {
@@ -1161,7 +1182,7 @@
 			if ( evaluator ) {
 				evaluator.value = value;
 			}
-			if ( !evaluator && !dontTeardownWrapper ) {
+			if ( !computation && !evaluator && !dontTeardownWrapper ) {
 				keys = keypath.split( '.' );
 				lastKey = keys.pop();
 				parentKeypath = keys.join( '.' );
@@ -1811,9 +1832,11 @@
 
 		function get( ractive, keypath, options ) {
 			var cache = ractive._cache,
-				value, wrapped, evaluator;
+				value, computation, wrapped, evaluator;
 			if ( cache[ keypath ] === undefined ) {
-				if ( wrapped = ractive._wrapped[ keypath ] ) {
+				if ( computation = ractive._computations[ keypath ] ) {
+					value = computation.value;
+				} else if ( wrapped = ractive._wrapped[ keypath ] ) {
 					value = wrapped.value;
 				} else if ( !keypath ) {
 					adaptIfNecessary( ractive, '', ractive.data );
@@ -4687,11 +4710,10 @@
 				previousValue = attribute.value;
 				value = this.value();
 				if ( previousValue === undefined || !arrayContentsMatch( value, previousValue ) ) {
-					attribute.receiving = true;
+					runloop.addBinding( attribute );
 					attribute.value = value;
 					set( this.root, this.keypath, value );
 					runloop.trigger();
-					attribute.receiving = false;
 				}
 				return this;
 			},
@@ -4730,11 +4752,10 @@
 			},
 			update: function() {
 				var value = this.value();
-				this.attr.receiving = true;
+				runloop.addBinding( this.attr );
 				this.attr.value = value;
 				set( this.root, this.keypath, value );
 				runloop.trigger();
-				this.attr.receiving = false;
 				return this;
 			},
 			deferUpdate: function() {
@@ -4771,10 +4792,9 @@
 			update: function() {
 				var node = this.node;
 				if ( node.checked ) {
-					this.attr.receiving = true;
+					runloop.addBinding( this.attr );
 					set( this.root, this.keypath, this.value() );
 					runloop.trigger();
-					this.attr.receiving = false;
 				}
 			},
 			teardown: function() {
@@ -4805,10 +4825,9 @@
 			},
 			update: function() {
 				this.checked = this.node.checked;
-				this.attr.receiving = true;
+				runloop.addBinding( this.attr );
 				set( this.root, this.keypath, getValueFromCheckboxes( this.root, this.keypath ) );
 				runloop.trigger();
-				this.attr.receiving = false;
 			},
 			teardown: function() {
 				this.node.removeEventListener( 'change', updateModel, false );
@@ -4827,10 +4846,9 @@
 				return this.node.checked;
 			},
 			update: function() {
-				this.attr.receiving = true;
+				runloop.addBinding( this.attr );
 				set( this.root, this.keypath, this.value() );
 				runloop.trigger();
-				this.attr.receiving = false;
 			},
 			teardown: function() {
 				this.node.removeEventListener( 'change', updateModel, false );
@@ -4865,10 +4883,9 @@
 		};
 		ContentEditableBinding.prototype = {
 			update: function() {
-				this.attr.receiving = true;
+				runloop.addBinding( this.attr );
 				set( this.root, this.keypath, this.node.innerHTML );
 				runloop.trigger();
-				this.attr.receiving = false;
 			},
 			teardown: function() {
 				this.node.removeEventListener( 'change', updateModel, false );
@@ -4898,10 +4915,9 @@
 			update: function() {
 				var attribute = this.attr,
 					value = this.value();
-				attribute.receiving = true;
+				runloop.addBinding( attribute );
 				set( attribute.root, attribute.keypath, value );
 				runloop.trigger();
-				attribute.receiving = false;
 			},
 			teardown: function() {
 				this.node.removeEventListener( 'change', updateModel, false );
@@ -5057,7 +5073,7 @@
 				value = '';
 			}
 			if ( value !== this.value ) {
-				if ( !this.receiving ) {
+				if ( !this.active ) {
 					node.innerHTML = value;
 				}
 				this.value = value;
@@ -5076,7 +5092,7 @@
 			}
 			if ( value !== this.value ) {
 				if ( this.useProperty ) {
-					if ( !this.receiving ) {
+					if ( !this.active ) {
 						node[ this.propertyName ] = value;
 					}
 					this.value = value;
@@ -10477,7 +10493,143 @@
 		};
 	}( config_errors, parse__parse );
 
-	var Ractive_initialise = function( isClient, errors, initOptions, registries, warn, create, extend, fillGaps, defineProperties, getElement, isObject, isArray, getGuid, Promise, magicAdaptor, parse ) {
+	var Ractive_initialise_computations_getComputationSignature = function() {
+
+		var pattern = /\$\{([^\}]+)\}/g;
+		return function( signature ) {
+			if ( typeof signature === 'function' ) {
+				return {
+					get: signature
+				};
+			}
+			if ( typeof signature === 'string' ) {
+				return {
+					get: createFunctionFromString( signature )
+				};
+			}
+			if ( typeof signature === 'object' && typeof signature.get === 'string' ) {
+				signature = {
+					get: createFunctionFromString( signature.get ),
+					set: signature.set
+				};
+			}
+			return signature;
+		};
+
+		function createFunctionFromString( signature ) {
+			var functionBody = 'var __ractive=this;return(' + signature.replace( pattern, function( match, keypath ) {
+				return '__ractive.get("' + keypath + '")';
+			} ) + ')';
+			return new Function( functionBody );
+		}
+	}();
+
+	var Ractive_initialise_computations_Watcher = function( isEqual, registerDependant, unregisterDependant ) {
+
+		var Watcher = function( computation, keypath ) {
+			this.root = computation.ractive;
+			this.keypath = keypath;
+			this.priority = 0;
+			this.computation = computation;
+			registerDependant( this );
+		};
+		Watcher.prototype = {
+			update: function() {
+				var value;
+				value = this.root.get( this.keypath );
+				if ( !isEqual( value, this.value ) ) {
+					this.computation.bubble();
+				}
+			},
+			teardown: function() {
+				unregisterDependant( this );
+			}
+		};
+		return Watcher;
+	}( utils_isEqual, shared_registerDependant, shared_unregisterDependant );
+
+	var Ractive_initialise_computations_Computation = function( runloop, set, Watcher ) {
+
+		var Computation = function( ractive, key, signature ) {
+			this.ractive = ractive;
+			this.key = key;
+			this.getter = signature.get;
+			this.setter = signature.set;
+			this.watchers = [];
+			this.update();
+		};
+		Computation.prototype = {
+			set: function( value ) {
+				if ( this.setting ) {
+					this.value = value;
+					return;
+				}
+				if ( !this.setter ) {
+					throw new Error( 'Computed properties without setters are read-only in the current version' );
+				}
+				this.setter.call( this.ractive, value );
+			},
+			update: function() {
+				var ractive, originalCaptured, result;
+				ractive = this.ractive;
+				originalCaptured = ractive._captured;
+				if ( !originalCaptured ) {
+					ractive._captured = [];
+				}
+				result = this.getter.call( ractive );
+				diff( this, this.watchers, ractive._captured );
+				ractive._captured = originalCaptured;
+				this.setting = true;
+				this.value = result;
+				set( ractive, this.key, result );
+				this.setting = false;
+				this.deferred = false;
+			},
+			bubble: function() {
+				if ( this.watchers.length <= 1 ) {
+					this.update();
+				} else if ( !this.deferred ) {
+					runloop.addComputation( this );
+					this.deferred = true;
+				}
+			}
+		};
+
+		function diff( computation, watchers, newDependencies ) {
+			var i, watcher, keypath;
+			i = watchers.length;
+			while ( i-- ) {
+				watcher = watchers[ i ];
+				if ( !newDependencies[ watcher.keypath ] ) {
+					watchers.splice( i, 1 );
+					watchers[ watcher.keypath ] = null;
+					watcher.teardown();
+				}
+			}
+			i = newDependencies.length;
+			while ( i-- ) {
+				keypath = newDependencies[ i ];
+				if ( !watchers[ keypath ] ) {
+					watcher = new Watcher( computation, keypath );
+					watchers.push( watchers[ keypath ] = watcher );
+				}
+			}
+		}
+		return Computation;
+	}( global_runloop, shared_set, Ractive_initialise_computations_Watcher );
+
+	var Ractive_initialise_computations_createComputations = function( hasOwnProperty, getComputationSignature, Computation ) {
+
+		return function createComputations( ractive, computed ) {
+			var key, signature;
+			for ( key in computed ) {
+				signature = getComputationSignature( computed[ key ] );
+				ractive._computations[ key ] = new Computation( ractive, key, signature );
+			}
+		};
+	}( utils_hasOwnProperty, Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
+
+	var Ractive_initialise = function( isClient, errors, initOptions, registries, warn, create, extend, fillGaps, defineProperties, getElement, isObject, isArray, getGuid, Promise, magicAdaptor, parse, createComputations ) {
 
 		var flags = [
 			'adapt',
@@ -10489,15 +10641,16 @@
 			'isolated'
 		];
 		return function initialiseRactiveInstance( ractive, options ) {
-			var template, templateEl, parsedTemplate, promise, fulfilPromise;
+			var defaults, template, templateEl, parsedTemplate, promise, fulfilPromise, computed;
 			if ( isArray( options.adaptors ) ) {
 				warn( 'The `adaptors` option, to indicate which adaptors should be used with a given Ractive instance, has been deprecated in favour of `adapt`. See [TODO] for more information' );
 				options.adapt = options.adaptors;
 				delete options.adaptors;
 			}
+			defaults = ractive.constructor.defaults;
 			initOptions.keys.forEach( function( key ) {
 				if ( options[ key ] === undefined ) {
-					options[ key ] = ractive.constructor.defaults[ key ];
+					options[ key ] = defaults[ key ];
 				}
 			} );
 			flags.forEach( function( flag ) {
@@ -10537,6 +10690,9 @@
 					value: []
 				},
 				_evaluators: {
+					value: create( null )
+				},
+				_computations: {
 					value: create( null )
 				},
 				_twowayBindings: {
@@ -10598,6 +10754,10 @@
 			if ( !ractive.data ) {
 				ractive.data = {};
 			}
+			computed = defaults.computed ? extend( create( defaults.computed ), options.computed ) : options.computed;
+			if ( computed ) {
+				createComputations( ractive, computed );
+			}
 			template = options.template;
 			if ( typeof template === 'string' ) {
 				if ( !parse ) {
@@ -10647,7 +10807,7 @@
 			ractive.transitionsEnabled = options.transitionsEnabled;
 			ractive._initing = false;
 		};
-	}( config_isClient, config_errors, config_initOptions, config_registries, utils_warn, utils_create, utils_extend, utils_fillGaps, utils_defineProperties, utils_getElement, utils_isObject, utils_isArray, utils_getGuid, utils_Promise, shared_get_magicAdaptor, parse__parse );
+	}( config_isClient, config_errors, config_initOptions, config_registries, utils_warn, utils_create, utils_extend, utils_fillGaps, utils_defineProperties, utils_getElement, utils_isObject, utils_isArray, utils_getGuid, utils_Promise, shared_get_magicAdaptor, parse__parse, Ractive_initialise_computations_createComputations );
 
 	var extend_initChildInstance = function( initOptions, wrapMethod, initialise ) {
 
@@ -10758,7 +10918,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--73a5ce4-dirty'
+				value: '--8138c50-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
