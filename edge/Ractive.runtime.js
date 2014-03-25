@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --9add334-dirty - 2014-03-25
+	Ractive - --49436b9-dirty - 2014-03-25
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -511,7 +511,7 @@
 			get = circular.get;
 		} );
 		return function resolveRef( ractive, ref, fragment ) {
-			var context, contextKeys, keys, lastKey, postfix, parentKeypath, parentValue, wrapped;
+			var context, contextKeys, keys, lastKey, postfix, parentKeypath, parentValue, wrapped, hasContextChain;
 			ref = normaliseKeypath( ref );
 			if ( ref === '.' ) {
 				return getInnerContext( fragment );
@@ -543,6 +543,7 @@
 				if ( !context ) {
 					continue;
 				}
+				hasContextChain = true;
 				parentKeypath = context + postfix;
 				parentValue = get( ractive, parentKeypath );
 				if ( wrapped = ractive._wrapped[ parentKeypath ] ) {
@@ -552,6 +553,9 @@
 					return context + '.' + ref;
 				}
 			} while ( fragment = fragment.parent );
+			if ( !hasContextChain && ( !ractive._parent || ractive.isolated ) ) {
+				return ref;
+			}
 			if ( hasOwnProperty.call( ractive.data, ref ) ) {
 				return ref;
 			} else if ( get( ractive, ref ) !== undefined ) {
@@ -8616,7 +8620,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--9add334-dirty'
+				value: '--49436b9-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
