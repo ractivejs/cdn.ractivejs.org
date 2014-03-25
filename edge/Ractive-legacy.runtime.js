@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --caaaff6-dirty - 2014-03-24
+	Ractive - --9add334-dirty - 2014-03-25
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -4200,12 +4200,6 @@
 			this.keypath = keypath;
 			registerDependant( this );
 			this.update();
-			if ( this.root.twoway && this.parentFragment.owner.type === types.ATTRIBUTE ) {
-				this.parentFragment.owner.element.bind();
-			}
-			if ( this.expressionResolver && this.expressionResolver.resolved ) {
-				this.expressionResolver = null;
-			}
 		};
 	}( config_types, shared_registerDependant, shared_unregisterDependant, shared_reassignFragment__reassignFragment );
 
@@ -6019,30 +6013,36 @@
 		return DomAttribute;
 	}( global_runloop, config_types, render_DomFragment_Attribute_helpers_determineNameAndNamespace, render_DomFragment_Attribute_helpers_setStaticAttribute, render_DomFragment_Attribute_helpers_determinePropertyName, render_DomFragment_Attribute_helpers_getInterpolator, render_DomFragment_Attribute_prototype_bind, render_DomFragment_Attribute_prototype_update, render_StringFragment__StringFragment );
 
-	var render_DomFragment_Element_initialise_createElementAttributes = function( DomAttribute ) {
+	var render_DomFragment_Element_initialise_createElementAttribute = function( Attribute ) {
+
+		return function createElementAttribute( element, name, fragment ) {
+			var attr = new Attribute( {
+				element: element,
+				name: name,
+				value: fragment,
+				root: element.root,
+				pNode: element.node
+			} );
+			element.attributes.push( element.attributes[ name ] = attr );
+			if ( name !== 'name' ) {
+				attr.update();
+			}
+		};
+	}( render_DomFragment_Attribute__Attribute );
+
+	var render_DomFragment_Element_initialise_createElementAttributes = function( createElementAttribute ) {
 
 		return function( element, attributes ) {
-			var attrName, attrValue, attr;
+			var attrName;
 			element.attributes = [];
 			for ( attrName in attributes ) {
 				if ( attributes.hasOwnProperty( attrName ) ) {
-					attrValue = attributes[ attrName ];
-					attr = new DomAttribute( {
-						element: element,
-						name: attrName,
-						value: attrValue,
-						root: element.root,
-						pNode: element.node
-					} );
-					element.attributes.push( element.attributes[ attrName ] = attr );
-					if ( attrName !== 'name' ) {
-						attr.update();
-					}
+					createElementAttribute( element, attrName, attributes[ attrName ] );
 				}
 			}
 			return element.attributes;
 		};
-	}( render_DomFragment_Attribute__Attribute );
+	}( render_DomFragment_Element_initialise_createElementAttribute );
 
 	var utils_toArray = function toArray( arrayLike ) {
 		var array = [],
@@ -6874,7 +6874,7 @@
 		};
 	}( global_runloop, render_DomFragment_Element_shared_executeTransition_Transition__Transition );
 
-	var render_DomFragment_Element_initialise__initialise = function( runloop, types, namespaces, create, defineProperty, warn, createElement, getInnerContext, getElementNamespace, createElementAttributes, appendElementChildren, decorate, addEventProxies, updateLiveQueries, executeTransition, enforceCase ) {
+	var render_DomFragment_Element_initialise__initialise = function( runloop, types, namespaces, create, defineProperty, warn, createElement, getInnerContext, getElementNamespace, createElementAttribute, createElementAttributes, appendElementChildren, decorate, addEventProxies, updateLiveQueries, executeTransition, enforceCase ) {
 
 		return function initialiseElement( element, options, docFrag ) {
 			var parentFragment, pNode, descriptor, namespace, name, attributes, width, height, loadHandler, root, selectBinding, errorMessage;
@@ -6955,6 +6955,9 @@
 					if ( pNode.tagName === 'SELECT' && ( selectBinding = pNode._ractive.binding ) ) {
 						selectBinding.deferUpdate();
 					}
+					if ( !attributes.value ) {
+						createElementAttribute( element, 'value', descriptor.f );
+					}
 					if ( element.node._ractive.value == pNode._ractive.value ) {
 						element.node.selected = true;
 					}
@@ -6976,7 +6979,7 @@
 				}
 			} while ( element = element.parent );
 		}
-	}( global_runloop, config_types, config_namespaces, utils_create, utils_defineProperty, utils_warn, utils_createElement, shared_getInnerContext, render_DomFragment_Element_initialise_getElementNamespace, render_DomFragment_Element_initialise_createElementAttributes, render_DomFragment_Element_initialise_appendElementChildren, render_DomFragment_Element_initialise_decorate__decorate, render_DomFragment_Element_initialise_addEventProxies__addEventProxies, render_DomFragment_Element_initialise_updateLiveQueries, render_DomFragment_Element_shared_executeTransition__executeTransition, render_DomFragment_shared_enforceCase );
+	}( global_runloop, config_types, config_namespaces, utils_create, utils_defineProperty, utils_warn, utils_createElement, shared_getInnerContext, render_DomFragment_Element_initialise_getElementNamespace, render_DomFragment_Element_initialise_createElementAttribute, render_DomFragment_Element_initialise_createElementAttributes, render_DomFragment_Element_initialise_appendElementChildren, render_DomFragment_Element_initialise_decorate__decorate, render_DomFragment_Element_initialise_addEventProxies__addEventProxies, render_DomFragment_Element_initialise_updateLiveQueries, render_DomFragment_Element_shared_executeTransition__executeTransition, render_DomFragment_shared_enforceCase );
 
 	var render_DomFragment_Element_prototype_teardown = function( runloop, executeTransition ) {
 
@@ -8912,7 +8915,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--caaaff6-dirty'
+				value: '--9add334-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
