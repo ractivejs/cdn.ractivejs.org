@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --4d92a13-dirty - 2014-03-28
+	Ractive - v0.4.0-pre2-2-de0275e-dirty - 2014-03-28
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -35,7 +35,7 @@
 
 ( function( global ) {
 
-
+	'use strict';
 
 	var noConflict = global.Ractive;
 
@@ -11243,7 +11243,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--4d92a13-dirty'
+				value: 'v0.4.0-pre2-2-de0275e-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
