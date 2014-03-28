@@ -1,6 +1,6 @@
 /*
 
-	Ractive - --574720a-dirty - 2014-03-26
+	Ractive - --4d92a13-dirty - 2014-03-28
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -5083,7 +5083,7 @@
 			return this;
 		};
 		updateEverythingElse = function() {
-			var node, value;
+			var node, value, binding;
 			node = this.pNode;
 			value = this.fragment.getValue();
 			if ( this.isValueAttribute ) {
@@ -5096,6 +5096,9 @@
 				if ( this.useProperty ) {
 					if ( !this.active ) {
 						node[ this.propertyName ] = value;
+					}
+					if ( node.tagName === 'OPTION' && node.selected && ( binding = this.element.select.binding ) ) {
+						binding.update();
 					}
 					this.value = value;
 					return this;
@@ -10941,7 +10944,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: '--574720a-dirty'
+				value: '--4d92a13-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
