@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre2-5-62cbdb1-dirty - 2014-04-01
+	Ractive - v0.4.0-pre2-7-4a7fc41-dirty - 2014-04-04
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -8589,7 +8589,7 @@
 	var parse_Parser_getMustache_SectionStub = function( types, normaliseKeypath, jsonifyStubs, KeypathExpressionStub, ExpressionStub ) {
 
 		var SectionStub = function( firstToken, parser ) {
-			var next;
+			var next, compare;
 			this.ref = firstToken.ref;
 			this.indexRef = firstToken.indexRef;
 			this.inverted = firstToken.mustacheType === types.INVERTED;
@@ -8604,12 +8604,14 @@
 			next = parser.next();
 			while ( next ) {
 				if ( next.mustacheType === types.CLOSING ) {
-					if ( normaliseKeypath( next.ref.trim() ) === this.ref || this.expr ) {
-						parser.pos += 1;
-						break;
-					} else {
-						throw new Error( 'Could not parse template: Illegal closing section' );
+					if ( this.ref ) {
+						compare = normaliseKeypath( next.ref.trim() );
+						if ( compare && compare !== this.ref ) {
+							throw new Error( 'Could not parse template: Illegal closing section {{/' + compare + '}}. Expected {{/' + this.ref + '}}.' );
+						}
 					}
+					parser.pos += 1;
+					break;
 				}
 				this.items.push( parser.getStub() );
 				next = parser.next();
@@ -8635,6 +8637,9 @@
 				}
 				if ( this.expr ) {
 					json.x = this.expr.toJSON();
+				}
+				if ( this.keypathExpr ) {
+					json.kx = this.keypathExpr.toJSON();
 				}
 				if ( this.items.length ) {
 					json.f = jsonifyStubs( this.items, noStringify );
@@ -10944,7 +10949,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-5-62cbdb1-dirty'
+				value: 'v0.4.0-pre2-7-4a7fc41-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
