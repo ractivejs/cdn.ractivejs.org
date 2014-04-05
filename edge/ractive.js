@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre2-7-4a7fc41-dirty - 2014-04-04
+	Ractive - v0.4.0-pre2-9-0ff04e8-dirty - 2014-04-05
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -8589,7 +8589,7 @@
 	var parse_Parser_getMustache_SectionStub = function( types, normaliseKeypath, jsonifyStubs, KeypathExpressionStub, ExpressionStub ) {
 
 		var SectionStub = function( firstToken, parser ) {
-			var next, compare;
+			var next;
 			this.ref = firstToken.ref;
 			this.indexRef = firstToken.indexRef;
 			this.inverted = firstToken.mustacheType === types.INVERTED;
@@ -8604,12 +8604,7 @@
 			next = parser.next();
 			while ( next ) {
 				if ( next.mustacheType === types.CLOSING ) {
-					if ( this.ref ) {
-						compare = normaliseKeypath( next.ref.trim() );
-						if ( compare && compare !== this.ref ) {
-							throw new Error( 'Could not parse template: Illegal closing section {{/' + compare + '}}. Expected {{/' + this.ref + '}}.' );
-						}
-					}
+					validateClosing( this, next );
 					parser.pos += 1;
 					break;
 				}
@@ -8617,6 +8612,20 @@
 				next = parser.next();
 			}
 		};
+
+		function validateClosing( stub, token ) {
+			var opening = stub.ref,
+				closing = normaliseKeypath( token.ref.trim() );
+			if ( !opening || !closing ) {
+				return;
+			}
+			if ( stub.indexRef ) {
+				opening += ':' + stub.indexRef;
+			}
+			if ( opening.substr( 0, closing.length ) !== closing ) {
+				throw new Error( 'Could not parse template: Illegal closing section {{/' + closing + '}}. Expected {{/' + stub.ref + '}}.' );
+			}
+		}
 		SectionStub.prototype = {
 			toJSON: function( noStringify ) {
 				var json;
@@ -10949,7 +10958,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-7-4a7fc41-dirty'
+				value: 'v0.4.0-pre2-9-0ff04e8-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
