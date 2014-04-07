@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre2-12-c64b19f-dirty - 2014-04-06
+	Ractive - v0.4.0-pre2-14-182f646-dirty - 2014-04-07
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -3462,7 +3462,7 @@
 		};
 	}( config_types, utils_create );
 
-	var render_DomFragment_shared_insertHtml = function( createElement ) {
+	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
 
 		var elementCache = {}, ieBug, ieBlacklist;
 		try {
@@ -3492,13 +3492,17 @@
 				]
 			};
 		}
-		return function( html, tagName, docFrag ) {
+		return function( html, tagName, namespace, docFrag ) {
 			var container, nodes = [],
 				wrapper;
 			if ( html ) {
 				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
 					container = element( 'DIV' );
 					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
+					container = container.querySelector( '.x' );
+				} else if ( namespace === namespaces.svg ) {
+					container = element( 'DIV' );
+					container.innerHTML = '<svg class="x">' + html + '</svg>';
 					container = container.querySelector( '.x' );
 				} else {
 					container = element( tagName );
@@ -3515,7 +3519,7 @@
 		function element( tagName ) {
 			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
 		}
-	}( utils_createElement );
+	}( config_namespaces, utils_createElement );
 
 	var render_DomFragment_shared_detach = function() {
 		var node = this.node,
@@ -4612,7 +4616,7 @@
 					return;
 				}
 				pNode = this.parentFragment.pNode;
-				this.nodes = insertHtml( html, pNode.tagName, this.docFrag );
+				this.nodes = insertHtml( html, pNode.tagName, pNode.namespaceURI, this.docFrag );
 				if ( !this.initialising ) {
 					pNode.insertBefore( this.docFrag, this.parentFragment.findNextNode( this ) );
 				}
@@ -10055,7 +10059,7 @@
 			if ( typeof options.descriptor === 'string' ) {
 				this.html = options.descriptor;
 				if ( this.docFrag ) {
-					this.nodes = insertHtml( this.html, options.pNode.tagName, this.docFrag );
+					this.nodes = insertHtml( this.html, options.pNode.tagName, options.pNode.namespaceURI, this.docFrag );
 				}
 			} else {
 				initFragment( this, options );
@@ -11249,7 +11253,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-12-c64b19f-dirty'
+				value: 'v0.4.0-pre2-14-182f646-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
