@@ -1,6 +1,6 @@
 /*
 
-	Ractive - v0.4.0-pre2-14-182f646-dirty - 2014-04-07
+	Ractive - v0.4.0-pre2-17-dc26664-dirty - 2014-04-07
 	==============================================================
 
 	Next-generation DOM manipulation - http://ractivejs.org
@@ -667,7 +667,7 @@
 					while ( i-- ) {
 						child = children[ i ];
 						key = lastKey.exec( child )[ 0 ];
-						childActualKeypath = actualKeypath + '.' + key;
+						childActualKeypath = actualKeypath ? actualKeypath + '.' + key : key;
 						notifyPatternObservers( ractive, child, childActualKeypath );
 					}
 				}
@@ -10954,7 +10954,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-14-182f646-dirty'
+				value: 'v0.4.0-pre2-17-dc26664-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
