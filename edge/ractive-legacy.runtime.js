@@ -1,5 +1,5 @@
 /*
-	Ractive - v0.4.0-pre2-29-a416126-dirty - 2014-04-08
+	Ractive - v0.4.0-pre2-30-1a336f6-dirty - 2014-04-08
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3346,7 +3346,7 @@
 		};
 	}( render_shared_utils_startsWith, render_shared_utils_getNewKeypath );
 
-	var render_shared_reassignFragment = function( types, assignNewKeypath ) {
+	var render_shared_reassignFragment = function( assignNewKeypath ) {
 
 		var reassignFragment = function( indexRef, newIndex, oldKeypath, newKeypath ) {
 			var i, item;
@@ -3366,7 +3366,7 @@
 			}
 		};
 		return reassignFragment;
-	}( config_types, render_shared_utils_assignNewKeypath );
+	}( render_shared_utils_assignNewKeypath );
 
 	var utils_create = function() {
 
@@ -5370,7 +5370,7 @@
 		getStringMiddle = makeRegexMatcher( /^(?=.)[^"'\\]+?(?:(?!.)|(?=["'\\]))/ );
 		getEscapeSequence = makeRegexMatcher( /^\\(?:['"\\bfnrt]|0(?![0-9])|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|(?=.)[^ux0-9])/ );
 		getLineContinuation = makeRegexMatcher( /^\\(?:\r\n|[\u000A\u000D\u2028\u2029])/ );
-		return function( quote, okQuote ) {
+		return function( okQuote ) {
 			return function( tokenizer ) {
 				var start, literal, done, next;
 				start = tokenizer.pos;
@@ -5403,12 +5403,12 @@
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getSingleQuotedString = function( makeQuotedStringMatcher ) {
 
-		return makeQuotedStringMatcher( '\'', '"' );
+		return makeQuotedStringMatcher( '"' );
 	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getDoubleQuotedString = function( makeQuotedStringMatcher ) {
 
-		return makeQuotedStringMatcher( '"', '\'' );
+		return makeQuotedStringMatcher( '\'' );
 	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral = function( types, getSingleQuotedString, getDoubleQuotedString ) {
@@ -8621,7 +8621,7 @@
 		return Computation;
 	}( utils_warn, global_runloop, shared_set, Ractive_initialise_computations_Watcher );
 
-	var Ractive_initialise_computations_createComputations = function( hasOwnProperty, getComputationSignature, Computation ) {
+	var Ractive_initialise_computations_createComputations = function( getComputationSignature, Computation ) {
 
 		return function createComputations( ractive, computed ) {
 			var key, signature;
@@ -8630,7 +8630,7 @@
 				ractive._computations[ key ] = new Computation( ractive, key, signature );
 			}
 		};
-	}( utils_hasOwnProperty, Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
+	}( Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
 
 	var Ractive_initialise = function( isClient, errors, initOptions, registries, warn, create, extend, fillGaps, defineProperties, getElement, isObject, isArray, getGuid, Promise, magicAdaptor, parse, createComputations ) {
 
@@ -8919,7 +8919,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-29-a416126-dirty'
+				value: 'v0.4.0-pre2-30-1a336f6-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
