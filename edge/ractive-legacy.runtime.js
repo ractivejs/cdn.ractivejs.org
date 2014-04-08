@@ -1,5 +1,5 @@
 /*
-	Ractive - v0.4.0-pre2-20-7eb4eee-dirty - 2014-04-07
+	Ractive - v0.4.0-pre2-21-b7702ec-dirty - 2014-04-08
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -8856,15 +8856,13 @@
 		};
 	}( utils_create, utils_defineProperties, utils_getGuid, utils_extend, extend_inheritFromParent, extend_inheritFromChildProps, extend_extractInlinePartials, extend_conditionallyParseTemplate, extend_conditionallyParsePartials, extend_initChildInstance, circular );
 
-	var Ractive__Ractive = function( initOptions, svg, defineProperties, prototype, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
+	var Ractive__Ractive = function( initOptions, svg, defineProperties, proto, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
 
 		var Ractive = function( options ) {
 			initialise( this, options );
 		};
+		Ractive.prototype = proto;
 		defineProperties( Ractive, {
-			prototype: {
-				value: prototype
-			},
 			partials: {
 				value: partialRegistry
 			},
@@ -8896,7 +8894,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-20-7eb4eee-dirty'
+				value: 'v0.4.0-pre2-21-b7702ec-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
