@@ -1,5 +1,5 @@
 /*
-	Ractive - v0.4.0-pre2-30-1a336f6-dirty - 2014-04-08
+	Ractive - v0.4.0-pre2-32-2017b93-dirty - 2014-04-08
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -10951,7 +10951,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-30-1a336f6-dirty'
+				value: 'v0.4.0-pre2-32-2017b93-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
