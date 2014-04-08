@@ -1,5 +1,5 @@
 /*
-	Ractive - v0.4.0-pre2-21-b7702ec-dirty - 2014-04-08
+	Ractive - v0.4.0-pre2-29-a416126-dirty - 2014-04-08
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3385,7 +3385,7 @@
 				if ( !arg ) {
 					return;
 				}
-				if ( arg.isIndexRef ) {
+				if ( arg.indexRef ) {
 					evaluator.values[ i ] = arg.value;
 				} else {
 					evaluator.refs.push( new Reference( root, arg.keypath, evaluator, i, priority ) );
@@ -3489,7 +3489,7 @@
 		}
 	}( global_runloop, utils_warn, utils_isEqual, shared_clearCache, shared_notifyDependants, shared_adaptIfNecessary, render_shared_Evaluator_Reference, render_shared_Evaluator_SoftReference );
 
-	var render_shared_Resolvers_ExpressionResolver = function( removeFromArray, resolveRef, Unresolved, Evaluator ) {
+	var render_shared_Resolvers_ExpressionResolver = function( removeFromArray, resolveRef, Unresolved, Evaluator, getNewKeypath ) {
 
 		var ExpressionResolver = function( owner, parentFragment, expression, callback ) {
 			var expressionResolver = this,
@@ -3512,7 +3512,7 @@
 				var index, keypath, unresolved;
 				if ( indexRefs && ( index = indexRefs[ reference ] ) !== undefined ) {
 					args[ i ] = {
-						isIndexRef: true,
+						indexRef: reference,
 						value: index
 					};
 					return;
@@ -3536,11 +3536,9 @@
 		};
 		ExpressionResolver.prototype = {
 			bubble: function() {
-				var oldKeypath;
 				if ( !this.ready ) {
 					return;
 				}
-				oldKeypath = this.keypath;
 				this.uniqueString = getUniqueString( this.str, this.args );
 				this.keypath = getKeypath( this.uniqueString );
 				this.createEvaluator();
@@ -3568,6 +3566,22 @@
 				} else {
 					this.root._evaluators[ this.keypath ].refresh();
 				}
+			},
+			reassign: function( indexRef, newIndex, oldKeypath, newKeypath ) {
+				var changed;
+				this.args.forEach( function( arg ) {
+					var changedKeypath;
+					if ( arg.keypath && ( changedKeypath = getNewKeypath( arg.keypath, oldKeypath, newKeypath ) ) ) {
+						arg.keypath = changedKeypath;
+						changed = true;
+					} else if ( arg.indexRef === indexRef ) {
+						arg.value = newIndex;
+						changed = true;
+					}
+				} );
+				if ( changed ) {
+					this.bubble();
+				}
 			}
 		};
 		return ExpressionResolver;
@@ -3581,7 +3595,7 @@
 		function getKeypath( uniqueString ) {
 			return '${' + uniqueString.replace( /[\.\[\]]/g, '-' ) + '}';
 		}
-	}( utils_removeFromArray, shared_resolveRef, shared_Unresolved, render_shared_Evaluator__Evaluator );
+	}( utils_removeFromArray, shared_resolveRef, shared_Unresolved, render_shared_Evaluator__Evaluator, render_shared_utils_getNewKeypath );
 
 	var render_shared_Resolvers_KeypathExpressionResolver = function( types, removeFromArray, resolveRef, Unresolved, registerDependant, unregisterDependant, ExpressionResolver ) {
 
@@ -3597,6 +3611,7 @@
 			this.pending = 0;
 			this.unresolved = [];
 			members = this.members = [];
+			this.indexRefMembers = [];
 			this.keypathObservers = [];
 			this.expressionResolvers = [];
 			descriptor.m.forEach( function( member, i ) {
@@ -3610,6 +3625,10 @@
 					indexRefs = parentFragment.indexRefs;
 					if ( indexRefs && ( index = indexRefs[ ref ] ) !== undefined ) {
 						members[ i ] = index;
+						resolver.indexRefMembers.push( {
+							ref: ref,
+							index: i
+						} );
 						return;
 					}
 					dynamic = true;
@@ -3667,6 +3686,20 @@
 				var unresolved;
 				while ( unresolved = this.unresolved.pop() ) {
 					unresolved.teardown();
+				}
+			},
+			reassign: function( indexRef, newIndex ) {
+				var changed, i, member;
+				i = this.indexRefMembers.length;
+				while ( i-- ) {
+					member = this.indexRefMembers[ i ];
+					if ( member.ref === indexRef ) {
+						changed = true;
+						this.members[ member.index ] = newIndex;
+					}
+				}
+				if ( changed ) {
+					this.bubble();
 				}
 			}
 		};
@@ -3771,19 +3804,13 @@
 		};
 	}( config_types, shared_registerDependant, shared_unregisterDependant );
 
-	var render_shared_Mustache_reassign = function( getNewKeypath, ExpressionResolver ) {
+	var render_shared_Mustache_reassign = function( getNewKeypath ) {
 
 		return function reassignMustache( indexRef, newIndex, oldKeypath, newKeypath ) {
-			var updated, i, self = this;
-			if ( this.descriptor.x ) {
-				if ( this.resolver ) {
-					this.resolver.teardown();
-				}
-				this.resolver = new ExpressionResolver( this, this.parentFragment, this.descriptor.x, function( keypath ) {
-					self.resolve( keypath );
-				} );
-			}
-			if ( this.keypath ) {
+			var updated, i;
+			if ( this.resolver ) {
+				this.resolver.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			} else if ( this.keypath ) {
 				updated = getNewKeypath( this.keypath, oldKeypath, newKeypath );
 				if ( updated ) {
 					this.resolve( updated );
@@ -3799,7 +3826,7 @@
 				}
 			}
 		};
-	}( render_shared_utils_getNewKeypath, render_shared_Resolvers_ExpressionResolver );
+	}( render_shared_utils_getNewKeypath );
 
 	var render_shared_Mustache__Mustache = function( init, update, resolve, reassign ) {
 
@@ -4053,22 +4080,14 @@
 	}( config_isClient, render_shared_updateSection );
 
 	var render_DomFragment_Section_reassignFragments = function( section, start, end, by ) {
-		if ( start + by === end ) {
-			return;
-		}
-		if ( start === end ) {
-			return;
-		}
-		var i, fragment, indexRef, oldIndex, newIndex, oldKeypath, newKeypath;
+		var i, fragment, indexRef, oldKeypath, newKeypath;
 		indexRef = section.descriptor.i;
 		for ( i = start; i < end; i += 1 ) {
 			fragment = section.fragments[ i ];
-			oldIndex = i - by;
-			newIndex = i;
 			oldKeypath = section.keypath + '.' + ( i - by );
 			newKeypath = section.keypath + '.' + i;
-			fragment.index += by;
-			fragment.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			fragment.index = i;
+			fragment.reassign( indexRef, i, oldKeypath, newKeypath );
 		}
 	};
 
@@ -4076,48 +4095,53 @@
 
 		return function( spliceSummary ) {
 			var section = this,
-				insertionPoint, balance, i, start, end, insertStart, insertEnd, spliceArgs, fragmentOptions;
+				balance, start, insertStart, insertEnd, spliceArgs;
 			balance = spliceSummary.balance;
 			if ( !balance ) {
 				return;
 			}
-			section.rendering = true;
 			start = spliceSummary.start;
-			if ( balance < 0 ) {
-				end = start - balance;
-				for ( i = start; i < end; i += 1 ) {
-					section.fragments[ i ].teardown( true );
-				}
-				section.fragments.splice( start, -balance );
-			} else {
-				fragmentOptions = {
-					descriptor: section.descriptor.f,
-					root: section.root,
-					pNode: section.parentFragment.pNode,
-					owner: section
-				};
-				if ( section.descriptor.i ) {
-					fragmentOptions.indexRef = section.descriptor.i;
-				}
-				insertStart = start + spliceSummary.removed;
-				insertEnd = start + spliceSummary.added;
-				insertionPoint = section.fragments[ insertStart ] ? section.fragments[ insertStart ].firstNode() : section.parentFragment.findNextNode( section );
-				spliceArgs = [
-					insertStart,
-					0
-				].concat( new Array( balance ) );
-				section.fragments.splice.apply( section.fragments, spliceArgs );
-				for ( i = insertStart; i < insertEnd; i += 1 ) {
-					fragmentOptions.context = section.keypath + '.' + i;
-					fragmentOptions.index = i;
-					section.fragments[ i ] = section.createFragment( fragmentOptions );
-				}
-				section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
-			}
 			section.length += balance;
-			reassignFragments( section, start, section.length, balance );
-			section.rendering = false;
+			if ( balance < 0 ) {
+				section.fragments.splice( start, -balance ).forEach( teardown );
+				reassignFragments( section, start, section.length, balance );
+				return;
+			}
+			insertStart = start + spliceSummary.removed;
+			insertEnd = start + spliceSummary.added;
+			spliceArgs = [
+				insertStart,
+				0
+			];
+			spliceArgs.length += balance;
+			section.fragments.splice.apply( section.fragments, spliceArgs );
+			reassignFragments( section, insertEnd, section.length, balance );
+			renderNewFragments( section, insertStart, insertEnd );
 		};
+
+		function teardown( fragment ) {
+			fragment.teardown( true );
+		}
+
+		function renderNewFragments( section, start, end ) {
+			var fragmentOptions, i, insertionPoint;
+			section.rendering = true;
+			fragmentOptions = {
+				descriptor: section.descriptor.f,
+				root: section.root,
+				pNode: section.parentFragment.pNode,
+				owner: section,
+				indexRef: section.descriptor.i
+			};
+			for ( i = start; i < end; i += 1 ) {
+				fragmentOptions.context = section.keypath + '.' + i;
+				fragmentOptions.index = i;
+				section.fragments[ i ] = section.createFragment( fragmentOptions );
+			}
+			insertionPoint = section.fragments[ end ] ? section.fragments[ end ].firstNode() : section.parentFragment.findNextNode( section );
+			section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
+			section.rendering = false;
+		}
 	}( render_DomFragment_Section_reassignFragments );
 
 	var render_DomFragment_Section__Section = function( types, Mustache, merge, render, splice, teardown, circular ) {
@@ -9533,10 +9557,11 @@
 
 		return function createInitialComponentBindings( component, toBind ) {
 			toBind.forEach( function createInitialComponentBinding( pair ) {
-				var childValue;
+				var childValue, parentValue;
 				createComponentBinding( component, component.root, pair.parentKeypath, pair.childKeypath );
 				childValue = get( component.instance, pair.childKeypath );
-				if ( childValue !== undefined ) {
+				parentValue = get( component.root, pair.parentKeypath );
+				if ( childValue !== undefined && parentValue === undefined ) {
 					set( component.root, pair.parentKeypath, childValue );
 				}
 			} );
@@ -10926,7 +10951,7 @@
 				value: svg
 			},
 			VERSION: {
-				value: 'v0.4.0-pre2-21-b7702ec-dirty'
+				value: 'v0.4.0-pre2-29-a416126-dirty'
 			}
 		} );
 		Ractive.eventDefinitions = Ractive.events;
