@@ -1,47 +1,22 @@
 /*
+	Ractive.js v0.4.0
+	2014-04-09 - commit cdd25e46
 
-	Ractive - --574720a-dirty - 2014-03-26
-	==============================================================
+	http://ractivejs.org
+	http://twitter.com/RactiveJS
 
-	Next-generation DOM manipulation - http://ractivejs.org
-	Follow @RactiveJS for updates
-
-	--------------------------------------------------------------
-
-	Copyright 2014 Rich Harris and contributors
-
-	Permission is hereby granted, free of charge, to any person
-	obtaining a copy of this software and associated documentation
-	files (the "Software"), to deal in the Software without
-	restriction, including without limitation the rights to use,
-	copy, modify, merge, publish, distribute, sublicense, and/or sell
-	copies of the Software, and to permit persons to whom the
-	Software is furnished to do so, subject to the following
-	conditions:
-
-	The above copyright notice and this permission notice shall be
-	included in all copies or substantial portions of the Software.
-
-	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-	EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
-	OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-	NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-	HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-	WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-	FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
-	OTHER DEALINGS IN THE SOFTWARE.
-
+	Released under the MIT License.
 */
 
 ( function( global ) {
 
-
+	'use strict';
 
 	var noConflict = global.Ractive;
 
 	var legacy = undefined;
 
-	var config_initOptions = function( legacy ) {
+	var config_initOptions = function() {
 
 		var defaults, initOptions;
 		defaults = {
@@ -98,6 +73,7 @@
 
 	var utils_createElement = function( svg, namespaces ) {
 
+		// Test for SVG support
 		if ( !svg ) {
 			return function( type, ns ) {
 				if ( ns && ns !== namespaces.html ) {
@@ -107,7 +83,7 @@
 			};
 		} else {
 			return function( type, ns ) {
-				if ( !ns ) {
+				if ( !ns || ns === namespaces.html ) {
 					return document.createElement( type );
 				}
 				return document.createElementNS( ns, type );
@@ -130,6 +106,8 @@
 			}
 			return Object.defineProperty;
 		} catch ( err ) {
+			// Object.defineProperty doesn't exist, or we're in IE8 where you can
+			// only use it with DOM objects (what the fuck were you smoking, MSFT?)
 			return function( obj, prop, desc ) {
 				obj[ prop ] = desc.value;
 			};
@@ -146,6 +124,7 @@
 					}
 				} );
 			} catch ( err ) {
+				// TODO how do we account for this? noMagic = true;
 				throw err;
 			}
 			if ( isClient ) {
@@ -220,6 +199,7 @@
 					result = value;
 					state = newState;
 					dispatchHandlers = makeDispatcher( state === FULFILLED ? fulfilledHandlers : rejectedHandlers, result );
+					// dispatch onFulfilled and onRejected handlers asynchronously
 					wait( dispatchHandlers );
 				};
 			};
@@ -227,9 +207,11 @@
 			reject = makeResolver( REJECTED );
 			callback( fulfil, reject );
 			promise = {
+				// `then()` returns a Promise - 2.2.7
 				then: function( onFulfilled, onRejected ) {
 					var promise2 = new Promise( function( fulfil, reject ) {
 						var processResolutionHandler = function( handler, handlers, forward ) {
+							// 2.2.1.1
 							if ( typeof handler === 'function' ) {
 								handlers.push( function( p1result ) {
 									var x;
@@ -241,12 +223,16 @@
 									}
 								} );
 							} else {
+								// Forward the result of promise1 to promise2, if resolution handlers
+								// are not given
 								handlers.push( forward );
 							}
 						};
+						// 2.2
 						processResolutionHandler( onFulfilled, fulfilledHandlers, fulfil );
 						processResolutionHandler( onRejected, rejectedHandlers, reject );
 						if ( state !== PENDING ) {
+							// If the promise has resolved already, dispatch the appropriate handlers asynchronously
 							wait( dispatchHandlers );
 						}
 					} );
@@ -291,7 +277,7 @@
 			} );
 		};
 		return Promise;
-
+		// TODO use MutationObservers or something to simulate setImmediate
 		function wait( callback ) {
 			setTimeout( callback, 0 );
 		}
@@ -306,10 +292,13 @@
 		}
 
 		function resolve( promise, x, fulfil, reject ) {
+			// Promise Resolution Procedure
 			var then;
+			// 2.3.1
 			if ( x === promise ) {
 				throw new TypeError( 'A promise\'s fulfillment handler cannot return the same promise' );
 			}
+			// 2.3.2
 			if ( x instanceof Promise ) {
 				x.then( fulfil, reject );
 			} else if ( x && ( typeof x === 'object' || typeof x === 'function' ) ) {
@@ -317,8 +306,10 @@
 					then = x.then;
 				} catch ( e ) {
 					reject( e );
+					// 2.3.3.2
 					return;
 				}
+				// 2.3.3.3
 				if ( typeof then === 'function' ) {
 					var called, resolvePromise, rejectPromise;
 					resolvePromise = function( y ) {
@@ -339,7 +330,9 @@
 						then.call( x, resolvePromise, rejectPromise );
 					} catch ( e ) {
 						if ( !called ) {
+							// 2.3.3.3.4.1
 							reject( e );
+							// 2.3.3.3.4.2
 							called = true;
 							return;
 						}
@@ -370,9 +363,11 @@
 
 	var utils_requestAnimationFrame = function( vendors ) {
 
+		// If window doesn't exist, we don't need requestAnimationFrame
 		if ( typeof window === 'undefined' ) {
 			return;
 		}
+		// https://gist.github.com/paulirish/1579671
 		( function( vendors, lastTime, window ) {
 			var x, setTimeout;
 			if ( window.requestAnimationFrame ) {
@@ -436,6 +431,8 @@
 		styleElement.type = 'text/css';
 		head = document.getElementsByTagName( 'head' )[ 0 ];
 		inDom = false;
+		// Internet Exploder won't let you use styleSheet.innerHTML - we have to
+		// use styleSheet.cssText instead
 		styleSheet = styleElement.styleSheet;
 		return {
 			add: function( Component ) {
@@ -443,6 +440,9 @@
 					return;
 				}
 				if ( !componentsInPage[ Component._guid ] ) {
+					// we create this counter so that we can in/decrement it as
+					// instances are added and removed. When all components are
+					// removed, the style is too
 					componentsInPage[ Component._guid ] = 0;
 					styles.push( Component.css );
 					runloop.scheduleCssUpdate();
@@ -481,6 +481,10 @@
 	var shared_getValueFromCheckboxes = function( ractive, keypath ) {
 		var value, checkboxes, checkbox, len, i, rootEl;
 		value = [];
+		// TODO in edge cases involving components with inputs bound to the same keypath, this
+		// could get messy
+		// if we're still in the initial render, we need to find the inputs from the as-yet off-DOM
+		// document fragment. otherwise, the root element
 		rootEl = ractive._rendering ? ractive.fragment.docFrag : ractive.el;
 		checkboxes = rootEl.querySelectorAll( 'input[type="checkbox"][name="{{' + keypath + '}}"]' );
 		len = checkboxes.length;
@@ -513,12 +517,17 @@
 		return function resolveRef( ractive, ref, fragment ) {
 			var context, contextKeys, keys, lastKey, postfix, parentKeypath, parentValue, wrapped, hasContextChain;
 			ref = normaliseKeypath( ref );
+			// Implicit iterators - i.e. {{.}} - are a special case
 			if ( ref === '.' ) {
 				return getInnerContext( fragment );
 			}
+			// If a reference begins with '.', it's either a restricted reference or
+			// an ancestor reference...
 			if ( ref.charAt( 0 ) === '.' ) {
+				// ...either way we need to get the innermost context
 				context = getInnerContext( fragment );
 				contextKeys = context ? context.split( '.' ) : [];
+				// ancestor references (starting "../") go up the tree
 				if ( ref.substr( 0, 3 ) === '../' ) {
 					while ( ref.substr( 0, 3 ) === '../' ) {
 						if ( !contextKeys.length ) {
@@ -530,11 +539,14 @@
 					contextKeys.push( ref );
 					return contextKeys.join( '.' );
 				}
+				// not an ancestor reference - must be a restricted reference (prepended with ".")
 				if ( !context ) {
 					return ref.substring( 1 );
 				}
 				return context + ref;
 			}
+			// Now we need to try and resolve the reference against any
+			// contexts set by parent list/object sections
 			keys = ref.split( '.' );
 			lastKey = keys.pop();
 			postfix = keys.length ? '.' + keys.join( '.' ) : '';
@@ -553,9 +565,14 @@
 					return context + '.' + ref;
 				}
 			} while ( fragment = fragment.parent );
+			// Still no keypath?
+			// If there's no context chain, and the instance is either a) isolated or
+			// b) an orphan, then we know that the keypath is identical to the reference
 			if ( !hasContextChain && ( !ractive._parent || ractive.isolated ) ) {
 				return ref;
 			}
+			// We need both of these - the first enables components to treat data contexts
+			// like lexical scopes in JavaScript functions...
 			if ( hasOwnProperty.call( ractive.data, ref ) ) {
 				return ref;
 			} else if ( get( ractive, ref ) !== undefined ) {
@@ -590,16 +607,19 @@
 
 		function notifyDependants( ractive, keypath, onlyDirect ) {
 			var i;
+			// Notify any pattern observers
 			if ( ractive._patternObservers.length ) {
 				notifyPatternObservers( ractive, keypath, keypath, onlyDirect, true );
 			}
 			for ( i = 0; i < ractive._deps.length; i += 1 ) {
+				// can't cache ractive._deps.length, it may change
 				notifyDependantsAtPriority( ractive, keypath, i, onlyDirect );
 			}
 		}
 		notifyDependants.multiple = function notifyMultipleDependants( ractive, keypaths, onlyDirect ) {
 			var i, j, len;
 			len = keypaths.length;
+			// Notify any pattern observers
 			if ( ractive._patternObservers.length ) {
 				i = len;
 				while ( i-- ) {
@@ -622,10 +642,14 @@
 			if ( !depsByKeypath ) {
 				return;
 			}
+			// update dependants of this keypath
 			updateAll( depsByKeypath[ keypath ] );
+			// If we're only notifying direct dependants, not dependants
+			// of downstream keypaths, then YOU SHALL NOT PASS
 			if ( onlyDirect ) {
 				return;
 			}
+			// otherwise, cascade
 			cascade( ractive._depsMap[ keypath ], ractive, priority );
 		}
 
@@ -648,9 +672,11 @@
 				}
 			}
 		}
-
+		// TODO split into two functions? i.e. one for the top-level call, one for the cascade
 		function notifyPatternObservers( ractive, registeredKeypath, actualKeypath, isParentOfChangedKeypath, isTopLevelCall ) {
 			var i, patternObserver, children, child, key, childActualKeypath, potentialWildcardMatches, cascade;
+			// First, observers that match patterns at the same level
+			// or higher in the tree
 			i = ractive._patternObservers.length;
 			while ( i-- ) {
 				patternObserver = ractive._patternObservers[ i ];
@@ -661,13 +687,19 @@
 			if ( isParentOfChangedKeypath ) {
 				return;
 			}
+			// If the changed keypath is 'foo.bar', we need to see if there are
+			// any pattern observer dependants of keypaths below any of
+			// 'foo.bar', 'foo.*', '*.bar' or '*.*' (e.g. 'foo.bar.*' or 'foo.*.baz' )
 			cascade = function( keypath ) {
 				if ( children = ractive._depsMap[ keypath ] ) {
 					i = children.length;
 					while ( i-- ) {
 						child = children[ i ];
+						// foo.*.baz
 						key = lastKey.exec( child )[ 0 ];
-						childActualKeypath = actualKeypath + '.' + key;
+						// 'baz'
+						childActualKeypath = actualKeypath ? actualKeypath + '.' + key : key;
+						// 'foo.bar.baz'
 						notifyPatternObservers( ractive, child, childActualKeypath );
 					}
 				}
@@ -679,7 +711,12 @@
 				cascade( registeredKeypath );
 			}
 		}
-
+		// This function takes a keypath such as 'foo.bar.baz', and returns
+		// all the variants of that keypath that include a wildcard in place
+		// of a key, such as 'foo.bar.*', 'foo.*.baz', 'foo.*.*' and so on.
+		// These are then checked against the dependants map (ractive._depsMap)
+		// to see if any pattern observers are downstream of one or more of
+		// these wildcard keypaths (e.g. 'foo.bar.*.status')
 		function getPotentialWildcardMatches( keypath ) {
 			var keys, starMap, mapper, i, result, wildcardKeypath;
 			keys = keypath.split( '.' );
@@ -698,7 +735,10 @@
 			}
 			return result;
 		}
-
+		// This function returns all the possible true/false combinations for
+		// a given number - e.g. for two, the possible combinations are
+		// [ true, true ], [ true, false ], [ false, true ], [ false, false ].
+		// It does so by getting all the binary values between 0 and e.g. 11
 		function getStarMap( num ) {
 			var ones = '',
 				max, binary, starMap, mapper, i;
@@ -794,6 +834,7 @@
 				this.addInstance( instance );
 				if ( !flushing ) {
 					inFlight += 1;
+					// create a new transition manager
 					transitionManager = makeTransitionManager( callback, transitionManager );
 				}
 			},
@@ -852,12 +893,15 @@
 				activeBindings.push( binding );
 			},
 			scheduleCssUpdate: function() {
+				// if runloop isn't currently active, we need to trigger change immediately
 				if ( !inFlight && !flushing ) {
+					// TODO does this ever happen?
 					css.update();
 				} else {
 					pendingCssChanges = true;
 				}
 			},
+			// changes that may cause additional changes...
 			addEvaluator: function( evaluator ) {
 				dirty = true;
 				evaluators.push( evaluator );
@@ -887,6 +931,7 @@
 			removeUnresolved: function( thing ) {
 				removeFromArray( unresolved, thing );
 			},
+			// synchronise node detachments with transition ends
 			detachWhenReady: function( thing ) {
 				transitionManager.detachQueue.push( thing );
 			}
@@ -918,6 +963,7 @@
 			while ( thing = activeBindings.pop() ) {
 				thing.active = false;
 			}
+			// Change events are fired last
 			while ( thing = instances.pop() ) {
 				instances[ thing._guid ] = false;
 				if ( thing._changes.length ) {
@@ -970,6 +1016,7 @@
 			if ( !unresolved.length ) {
 				return;
 			}
+			// see if we can resolve any unresolved references
 			array = unresolved.splice( 0, unresolved.length );
 			while ( thing = array.pop() ) {
 				if ( thing.keypath ) {
@@ -977,8 +1024,10 @@
 				}
 				keypath = resolveRef( thing.root, thing.ref, thing.parentFragment );
 				if ( keypath !== undefined ) {
+					// If we've resolved the keypath, we can initialise this item
 					thing.resolve( keypath );
 				} else {
+					// If we can't resolve the reference, try again next time
 					unresolved.push( thing );
 				}
 			}
@@ -996,6 +1045,7 @@
 				for ( i = 0; i < queue.length; i += 1 ) {
 					animation = queue[ i ];
 					if ( !animation.tick( now ) ) {
+						// animation is complete, remove it from the stack, and decrement i so we don't miss one
 						queue.splice( i--, 1 );
 					}
 				}
@@ -1013,6 +1063,7 @@
 					rAF( animations.tick );
 				}
 			},
+			// TODO optimise this
 			abort: function( keypath, root ) {
 				var i = queue.length,
 					animation;
@@ -1030,6 +1081,7 @@
 	var utils_isArray = function() {
 
 		var toString = Object.prototype.toString;
+		// thanks, http://perfectionkills.com/instanceof-considered-harmful-or-how-to-write-a-robust-isarray/
 		return function( thing ) {
 			return toString.call( thing ) === '[object Array]';
 		};
@@ -1092,9 +1144,14 @@
 		if ( !args ) {
 			return null;
 		}
+		// figure out where the changes started...
 		start = +( args[ 0 ] < 0 ? array.length + args[ 0 ] : args[ 0 ] );
+		// ...and how many items were added to or removed from the array
 		addedItems = Math.max( 0, args.length - 2 );
 		removedItems = args[ 1 ] !== undefined ? args[ 1 ] : array.length - start;
+		// It's possible to do e.g. [ 1, 2, 3 ].splice( 2, 2 ) - i.e. the second argument
+		// means removing more items from the end of the array than there are. In these
+		// cases we need to curb JavaScript's enthusiasm or we'll get out of sync
 		removedItems = Math.min( removedItems, array.length - start );
 		balance = addedItems - removedItems;
 		return {
@@ -1140,7 +1197,9 @@
 	var shared_clearCache = function clearCache( ractive, keypath, dontTeardownWrapper ) {
 		var cacheMap, wrappedProperty;
 		if ( !dontTeardownWrapper ) {
+			// Is there a wrapped property at this keypath?
 			if ( wrappedProperty = ractive._wrapped[ keypath ] ) {
+				// Did we unwrap it?
 				if ( wrappedProperty.teardown() !== false ) {
 					ractive._wrapped[ keypath ] = null;
 				}
@@ -1180,12 +1239,18 @@
 			if ( computation && !computation.setting ) {
 				computation.set( value );
 			}
+			// If we have a wrapper with a `reset()` method, we try and use it. If the
+			// `reset()` method returns false, the wrapper should be torn down, and
+			// (most likely) a new one should be created later
 			if ( wrapper && wrapper.reset ) {
 				dontTeardownWrapper = wrapper.reset( value ) !== false;
 				if ( dontTeardownWrapper ) {
 					value = wrapper.get();
 				}
 			}
+			// Update evaluator value. This may be from the evaluator itself, or
+			// it may be from the wrapper that wraps an evaluator's result - it
+			// doesn't matter
 			if ( evaluator ) {
 				evaluator.value = value;
 			}
@@ -1222,30 +1287,40 @@
 			root = wrapper.root;
 			keypath = wrapper.keypath;
 			root._changes.push( keypath );
+			// If this is a sort or reverse, we just do root.set()...
+			// TODO use merge logic?
 			if ( methodName === 'sort' || methodName === 'reverse' ) {
 				set( root, keypath, array );
 				return;
 			}
 			if ( !spliceSummary ) {
+				// (presumably we tried to pop from an array of zero length.
+				// in which case there's nothing to do)
 				return;
 			}
+			// ...otherwise we do a smart update whereby elements are added/removed
+			// in the right place. But we do need to clear the cache downstream
 			clearEnd = !spliceSummary.balance ? spliceSummary.added : array.length - Math.min( spliceSummary.balance, 0 );
 			for ( i = spliceSummary.start; i < clearEnd; i += 1 ) {
 				clearCache( root, keypath + '.' + i );
 			}
+			// Propagate changes
 			updateDependant = function( dependant ) {
+				// is this a DOM section?
 				if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
 					dependant.splice( spliceSummary );
 				} else {
 					dependant.update();
 				}
 			};
+			// Go through all dependant priority levels, finding smart update targets
 			root._deps.forEach( function( depsByKeypath ) {
 				var dependants = depsByKeypath[ keypath ];
 				if ( dependants ) {
 					dependants.forEach( updateDependant );
 				}
 			} );
+			// if we're removing old items and adding new ones, simultaneously, we need to force an update
 			if ( spliceSummary.added && spliceSummary.removed ) {
 				changed = Math.max( spliceSummary.added, spliceSummary.removed );
 				start = spliceSummary.start;
@@ -1256,6 +1331,11 @@
 					notifyDependants( root, childKeypath );
 				}
 			}
+			// length property has changed - notify dependants
+			// TODO in some cases (e.g. todo list example, when marking all as complete, then
+			// adding a new item (which should deactivate the 'all complete' checkbox
+			// but doesn't) this needs to happen before other updates. But doing so causes
+			// other mental problems. not sure what's going on...
 			if ( !lengthUnchanged ) {
 				clearCache( root, keypath + '.length' );
 				notifyDependants( root, keypath + '.length', true );
@@ -1279,9 +1359,13 @@
 		mutatorMethods.forEach( function( methodName ) {
 			var method = function() {
 				var spliceEquivalent, spliceSummary, result, wrapper, i;
+				// push, pop, shift and unshift can all be represented as a splice operation.
+				// this makes life easier later
 				spliceEquivalent = getSpliceEquivalent( this, methodName, Array.prototype.slice.call( arguments ) );
 				spliceSummary = summariseSpliceOperation( this, spliceEquivalent );
+				// apply the underlying method
 				result = Array.prototype[ methodName ].apply( this, arguments );
+				// trigger changes
 				this._ractive.setting = true;
 				i = this._ractive.wrappers.length;
 				while ( i-- ) {
@@ -1297,8 +1381,11 @@
 				value: method
 			} );
 		} );
+		// can we use prototype chain injection?
+		// http://perfectionkills.com/how-ecmascript-5-still-does-not-allow-to-subclass-an-array/#wrappers_prototype_chain_injection
 		testObj = {};
 		if ( testObj.__proto__ ) {
+			// yes, we can
 			patchArrayMethods = function( array ) {
 				array.__proto__ = patchedArrayProto;
 			};
@@ -1306,6 +1393,7 @@
 				array.__proto__ = Array.prototype;
 			};
 		} else {
+			// no, we can't
 			patchArrayMethods = function( array ) {
 				var i, methodName;
 				i = mutatorMethods.length;
@@ -1331,9 +1419,13 @@
 
 	var shared_get_arrayAdaptor__arrayAdaptor = function( defineProperty, isArray, patch ) {
 
-		var arrayAdaptor, ArrayWrapper, errorMessage;
+		var arrayAdaptor,
+			// helpers
+			ArrayWrapper, errorMessage;
 		arrayAdaptor = {
 			filter: function( object ) {
+				// wrap the array if a) b) it's an array, and b) either it hasn't been wrapped already,
+				// or the array didn't trigger the get() itself
 				return isArray( object ) && ( !object._ractive || !object._ractive.setting );
 			},
 			wrap: function( ractive, array, keypath ) {
@@ -1344,7 +1436,9 @@
 			this.root = ractive;
 			this.value = array;
 			this.keypath = keypath;
+			// if this array hasn't already been ractified, ractify it
 			if ( !array._ractive ) {
+				// define a non-enumerable _ractive property to store the wrappers
 				defineProperty( array, '_ractive', {
 					value: {
 						wrappers: [],
@@ -1355,6 +1449,7 @@
 				} );
 				patch( array );
 			}
+			// store the ractive instance, so we can handle transitions later
 			if ( !array._ractive.instances[ ractive._guid ] ) {
 				array._ractive.instances[ ractive._guid ] = 0;
 				array._ractive.instances.push( ractive );
@@ -1372,6 +1467,9 @@
 				storage = array._ractive;
 				wrappers = storage.wrappers;
 				instances = storage.instances;
+				// if teardown() was invoked because we're clearing the cache as a result of
+				// a change that the array itself triggered, we can save ourselves the teardown
+				// and immediate setup
 				if ( storage.setting ) {
 					return false;
 				}
@@ -1380,10 +1478,13 @@
 					throw new Error( errorMessage );
 				}
 				wrappers.splice( index, 1 );
+				// if nothing else depends on this array, we can revert it to its
+				// natural state
 				if ( !wrappers.length ) {
 					delete array._ractive;
 					patch.unpatch( this.value );
 				} else {
+					// remove ractive instance if possible
 					instances[ this.root._guid ] -= 1;
 					if ( !instances[ this.root._guid ] ) {
 						index = instances.indexOf( this.root );
@@ -1418,10 +1519,14 @@
 				keys = keypath.split( '.' );
 				key = keys.pop();
 				parentKeypath = keys.join( '.' );
+				// If the parent value is a wrapper, other than a magic wrapper,
+				// we shouldn't wrap this property
 				if ( ( parentWrapper = ractive._wrapped[ parentKeypath ] ) && !parentWrapper.magic ) {
 					return false;
 				}
 				parentValue = ractive.get( parentKeypath );
+				// if parentValue is an array that doesn't include this member,
+				// we should return false otherwise lengths will get messed up
 				if ( isArray( parentValue ) && /^[0-9]+$/.test( key ) ) {
 					return false;
 				}
@@ -1442,12 +1547,15 @@
 			objKeypath = keys.join( '.' );
 			this.obj = objKeypath ? ractive.get( objKeypath ) : ractive.data;
 			descriptor = this.originalDescriptor = Object.getOwnPropertyDescriptor( this.obj, this.prop );
+			// Has this property already been wrapped?
 			if ( descriptor && descriptor.set && ( siblings = descriptor.set._ractiveWrappers ) ) {
+				// Yes. Register this wrapper to this property, if it hasn't been already
 				if ( siblings.indexOf( this ) === -1 ) {
 					siblings.push( this );
 				}
 				return;
 			}
+			// No, it hasn't been wrapped
 			createAccessors( this, value, descriptor );
 		};
 		MagicWrapper.prototype = {
@@ -1460,6 +1568,7 @@
 				}
 				this.updating = true;
 				this.obj[ this.prop ] = value;
+				// trigger set() accessor
 				clearCache( this.ractive, this.keypath );
 				this.updating = false;
 			},
@@ -1476,12 +1585,16 @@
 			},
 			teardown: function() {
 				var descriptor, set, value, wrappers, index;
+				// If this method was called because the cache was being cleared as a
+				// result of a set()/update() call made by this wrapper, we return false
+				// so that it doesn't get torn down
 				if ( this.updating ) {
 					return false;
 				}
 				descriptor = Object.getOwnPropertyDescriptor( this.obj, this.prop );
 				set = descriptor && descriptor.set;
 				if ( !set ) {
+					// most likely, this was an array member that was spliced out
 					return;
 				}
 				wrappers = set._ractiveWrappers;
@@ -1489,6 +1602,7 @@
 				if ( index !== -1 ) {
 					wrappers.splice( index, 1 );
 				}
+				// Last one out, turn off the lights
 				if ( !wrappers.length ) {
 					value = this.obj[ this.prop ];
 					Object.defineProperty( this.obj, this.prop, this.originalDescriptor || {
@@ -1505,12 +1619,15 @@
 			var object, property, oldGet, oldSet, get, set;
 			object = originalWrapper.obj;
 			property = originalWrapper.prop;
+			// Is this descriptor configurable?
 			if ( descriptor && !descriptor.configurable ) {
+				// Special case - array length
 				if ( property === 'length' ) {
 					return;
 				}
 				throw new Error( 'Cannot use magic mode with property "' + property + '" - object is not configurable' );
 			}
+			// Time to wrap this property
 			if ( descriptor ) {
 				oldGet = descriptor.get;
 				oldSet = descriptor.set;
@@ -1542,6 +1659,8 @@
 				runloop.end();
 				wrapper.updating = false;
 			}
+			// Create an array of wrappers, in case other keypaths/ractives depend on this property.
+			// Handily, we can store them as a property of the set function. Yay JavaScript.
 			set._ractiveWrappers = [ originalWrapper ];
 			Object.defineProperty( object, property, {
 				get: get,
@@ -1593,9 +1712,12 @@
 		var prefixers = {};
 		return function adaptIfNecessary( ractive, keypath, value, isExpressionResult ) {
 			var len, i, adaptor, wrapped;
+			// Do we have an adaptor for this value?
 			len = ractive.adapt.length;
 			for ( i = 0; i < len; i += 1 ) {
 				adaptor = ractive.adapt[ i ];
+				// Adaptors can be specified as e.g. [ 'Backbone.Model', 'Backbone.Collection' ] -
+				// we need to get the actual adaptor if that's the case
 				if ( typeof adaptor === 'string' ) {
 					if ( !adaptorRegistry[ adaptor ] ) {
 						throw new Error( 'Missing adaptor "' + adaptor + '"' );
@@ -1648,6 +1770,7 @@
 						return obj;
 					}
 					if ( typeof relativeKeypath === 'object' ) {
+						// 'relativeKeypath' is in fact a hash, not a keypath
 						return rootDot ? prefixKeypath( relativeKeypath, rootKeypath ) : relativeKeypath;
 					}
 				};
@@ -1675,6 +1798,7 @@
 
 		function updateDependantsMap( ractive, keypath ) {
 			var keys, parentKeypath, map;
+			// update dependants map
 			keys = keypath.split( '.' );
 			while ( keys.length ) {
 				keys.pop();
@@ -1712,6 +1836,7 @@
 
 		function updateDependantsMap( ractive, keypath ) {
 			var keys, parentKeypath, map;
+			// update dependants map
 			keys = keypath.split( '.' );
 			while ( keys.length ) {
 				keys.pop();
@@ -1719,6 +1844,7 @@
 				map = ractive._depsMap[ parentKeypath ];
 				map[ keypath ] -= 1;
 				if ( !map[ keypath ] ) {
+					// remove from parent deps map
 					map.splice( map.indexOf( keypath ), 1 );
 					map[ keypath ] = undefined;
 				}
@@ -1746,18 +1872,25 @@
 		Binding.prototype = {
 			update: function() {
 				var value;
+				// Only *you* can prevent infinite loops
 				if ( this.updating || this.counterpart && this.counterpart.updating ) {
 					return;
 				}
 				value = get( this.root, this.keypath );
+				// Is this a smart array update? If so, it'll update on its
+				// own, we shouldn't do anything
 				if ( isArray( value ) && value._ractive && value._ractive.setting ) {
 					return;
 				}
 				if ( !isEqual( value, this.value ) ) {
 					this.updating = true;
+					// TODO maybe the case that `value === this.value` - should that result
+					// in an update rather than a set?
 					runloop.addInstance( this.otherInstance );
 					set( this.otherInstance, this.otherKeypath, value );
 					this.value = value;
+					// TODO will the counterpart update after this line, during
+					// the runloop end cycle? may be a problem...
 					this.updating = false;
 				}
 			},
@@ -1778,6 +1911,7 @@
 			hash = parentKeypath + '=' + childKeypath;
 			bindings = component.bindings;
 			if ( bindings[ hash ] ) {
+				// TODO does this ever happen?
 				return;
 			}
 			bindings[ hash ] = true;
@@ -1804,7 +1938,9 @@
 			var parent, fragment, keypathToTest, value, index;
 			parent = child._parent;
 			fragment = child.component.parentFragment;
+			// Special case - index refs
 			if ( fragment.indexRefs && ( index = fragment.indexRefs[ keypath ] ) !== undefined ) {
+				// create an index ref binding, so that it can be reassigned letter if necessary
 				child.component.indexRefBindings[ keypath ] = keypath;
 				return index;
 			}
@@ -1842,6 +1978,7 @@
 			var cache = ractive._cache,
 				value, computation, wrapped, evaluator;
 			if ( cache[ keypath ] === undefined ) {
+				// Is this a computed property?
 				if ( computation = ractive._computations[ keypath ] ) {
 					value = computation.value;
 				} else if ( wrapped = ractive._wrapped[ keypath ] ) {
@@ -1858,6 +1995,9 @@
 			} else {
 				value = cache[ keypath ];
 			}
+			// If the property doesn't exist on this viewmodel, we
+			// can try going up a scope. This will create bindings
+			// between parent and child if possible
 			if ( value === FAILED_LOOKUP ) {
 				if ( ractive._parent && !ractive.isolated ) {
 					value = getFromParent( ractive, keypath, options );
@@ -1885,6 +2025,7 @@
 			if ( parentValue === null || parentValue === undefined ) {
 				return;
 			}
+			// update cache map
 			if ( !( cacheMap = ractive._cacheMap[ parentKeypath ] ) ) {
 				ractive._cacheMap[ parentKeypath ] = [ keypath ];
 			} else {
@@ -1892,12 +2033,20 @@
 					cacheMap.push( keypath );
 				}
 			}
+			// If this property doesn't exist, we return a sentinel value
+			// so that we know to query parent scope (if such there be)
 			if ( typeof parentValue === 'object' && !( key in parentValue ) ) {
 				return ractive._cache[ keypath ] = FAILED_LOOKUP;
 			}
+			// If this value actually lives on the prototype of this
+			// instance's `data`, and not as an own property, we need to
+			// clone it. Otherwise the instance could end up manipulating
+			// data that doesn't belong to it
 			shouldClone = !hasOwnProperty.call( parentValue, key );
 			value = shouldClone ? clone( parentValue[ key ] ) : parentValue[ key ];
+			// Do we have an adaptor for this value?
 			value = adaptIfNecessary( ractive, keypath, value, false );
+			// Update cache
 			ractive._cache[ keypath ] = value;
 			return value;
 		}
@@ -1958,6 +2107,7 @@
 				while ( i-- ) {
 					interpolators[ i ] = interpolate( from[ i ], to[ i ] );
 				}
+				// surplus values - don't interpolate, but don't exclude them either
 				for ( i = len; i < from.length; i += 1 ) {
 					intermediate[ i ] = from[ i ];
 				}
@@ -2064,6 +2214,7 @@
 		var Animation = function( options ) {
 			var key;
 			this.startTime = Date.now();
+			// from and to
 			for ( key in options ) {
 				if ( options.hasOwnProperty( key ) ) {
 					this[ key ] = options[ key ];
@@ -2090,6 +2241,7 @@
 						}
 						this.complete( this.to );
 						index = this.root._animations.indexOf( this );
+						// TODO investigate why this happens
 						if ( index === -1 ) {
 							warn( 'Animation was not found' );
 						}
@@ -2115,6 +2267,7 @@
 				var index;
 				this.running = false;
 				index = this.root._animations.indexOf( this );
+				// TODO investigate why this happens
 				if ( index === -1 ) {
 					warn( 'Animation was not found' );
 				}
@@ -2134,11 +2287,15 @@
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
 			} );
+			// animate multiple keypaths
 			if ( typeof keypath === 'object' ) {
 				options = to || {};
 				easing = options.easing;
 				duration = options.duration;
 				animations = [];
+				// we don't want to pass the `step` and `complete` handlers, as they will
+				// run for each animation! So instead we'll store the handlers and create
+				// our own...
 				step = options.step;
 				complete = options.complete;
 				if ( step || complete ) {
@@ -2198,6 +2355,7 @@
 					}
 				};
 			}
+			// animate a single keypath
 			options = options || {};
 			if ( options.complete ) {
 				promise.then( options.complete );
@@ -2218,13 +2376,17 @@
 			if ( keypath !== null ) {
 				from = get( root, keypath );
 			}
+			// cancel any existing animation
+			// TODO what about upstream/downstream keypaths?
 			animations.abort( keypath, root );
+			// don't bother animating values that stay the same
 			if ( isEqual( from, to ) ) {
 				if ( options.complete ) {
 					options.complete( options.to );
 				}
 				return noAnimation;
 			}
+			// easing function
 			if ( options.easing ) {
 				if ( typeof options.easing === 'function' ) {
 					easing = options.easing;
@@ -2235,7 +2397,9 @@
 					easing = null;
 				}
 			}
+			// duration
 			duration = options.duration === undefined ? 400 : options.duration;
+			// TODO store keys, use an internal set method
 			animation = new Animation( {
 				keypath: keypath,
 				from: from,
@@ -2244,6 +2408,7 @@
 				duration: duration,
 				easing: easing,
 				interpolator: options.interpolator,
+				// TODO wrap callbacks if necessary, to use instance as context
 				step: options.step,
 				complete: options.complete
 			} );
@@ -2294,6 +2459,7 @@
 				}
 			}
 		}
+		// IE8...
 		return function( node, selector ) {
 			var nodes, i;
 			nodes = ( node.parentNode || node.document ).querySelectorAll( selector );
@@ -2340,6 +2506,8 @@
 			ancestryB = getAncestry( b.component || b._ractive.proxy );
 			oldestA = ancestryA[ ancestryA.length - 1 ];
 			oldestB = ancestryB[ ancestryB.length - 1 ];
+			// remove items from the end of both ancestries as long as they are identical
+			// - the final one removed is the closest mutual ancestor
 			while ( oldestA && oldestA === oldestB ) {
 				ancestryA.pop();
 				ancestryB.pop();
@@ -2347,15 +2515,21 @@
 				oldestA = ancestryA[ ancestryA.length - 1 ];
 				oldestB = ancestryB[ ancestryB.length - 1 ];
 			}
+			// now that we have the mutual ancestor, we can find which is earliest
 			oldestA = oldestA.component || oldestA;
 			oldestB = oldestB.component || oldestB;
 			fragmentA = oldestA.parentFragment;
 			fragmentB = oldestB.parentFragment;
+			// if both items share a parent fragment, our job is easy
 			if ( fragmentA === fragmentB ) {
 				indexA = fragmentA.items.indexOf( oldestA );
 				indexB = fragmentB.items.indexOf( oldestB );
+				// if it's the same index, it means one contains the other,
+				// so we see which has the longest ancestry
 				return indexA - indexB || ancestryA.length - ancestryB.length;
 			}
+			// if mutual ancestor is a section, we first test to see which section
+			// fragment comes first
 			if ( fragments = mutualAncestor.fragments ) {
 				indexA = fragments.indexOf( fragmentA );
 				indexB = fragments.indexOf( fragmentB );
@@ -2394,6 +2568,8 @@
 				bitmask = node.compareDocumentPosition( otherNode );
 				return bitmask & 2 ? 1 : -1;
 			}
+			// In old IE, we can piggy back on the mechanism for
+			// comparing component positions
 			return sortByItemPosition( node, otherNode );
 		};
 	}( Ractive_prototype_shared_makeQuery_sortByItemPosition );
@@ -2478,10 +2654,15 @@
 			}
 			options = options || {};
 			liveQueries = this._liveQueries;
+			// Shortcut: if we're maintaining a live query with this
+			// selector, we don't need to traverse the parallel DOM
 			if ( query = liveQueries[ selector ] ) {
+				// Either return the exact same query, or (if not live) a snapshot
 				return options && options.live ? query : query.slice();
 			}
 			query = makeQuery( this, selector, !! options.live, false );
+			// Add this to the list of live queries Ractive needs to maintain,
+			// if applicable
 			if ( query.live ) {
 				liveQueries.push( selector );
 				liveQueries[ selector ] = query;
@@ -2497,10 +2678,15 @@
 			var liveQueries, query;
 			options = options || {};
 			liveQueries = this._liveComponentQueries;
+			// Shortcut: if we're maintaining a live query with this
+			// selector, we don't need to traverse the parallel DOM
 			if ( query = liveQueries[ selector ] ) {
+				// Either return the exact same query, or (if not live) a snapshot
 				return options && options.live ? query : query.slice();
 			}
 			query = makeQuery( this, selector, !! options.live, true );
+			// Add this to the list of live queries Ractive needs to maintain,
+			// if applicable
 			if ( query.live ) {
 				liveQueries.push( selector );
 				liveQueries[ selector ] = query;
@@ -2562,9 +2748,13 @@
 			var value;
 			keypath = normaliseKeypath( keypath );
 			value = get( this, keypath, options );
+			// capture the dependency, if we're inside an evaluator
 			if ( this._captured && this._captured[ keypath ] !== true ) {
 				this._captured.push( keypath );
 				this._captured[ keypath ] = true;
+				// if we couldn't resolve the keypath, we need to make it as a failed
+				// lookup, so that the evaluator updates correctly once we CAN
+				// resolve the keypath
 				if ( value === undefined && this._unresolvedImplicitDependencies[ keypath ] !== true ) {
 					new UnresolvedImplicitDependency( this, keypath );
 				}
@@ -2578,18 +2768,24 @@
 		if ( typeof window === 'undefined' || !document || !input ) {
 			return null;
 		}
+		// We already have a DOM node - no work to do. (Duck typing alert!)
 		if ( input.nodeType ) {
 			return input;
 		}
+		// Get node from string
 		if ( typeof input === 'string' ) {
+			// try ID first
 			output = document.getElementById( input );
+			// then as selector, if possible
 			if ( !output && document.querySelector ) {
 				output = document.querySelector( input );
 			}
+			// did it work?
 			if ( output && output.nodeType ) {
 				return output;
 			}
 		}
+		// If we've been given a collection (jQuery, Zepto etc), extract the first item
 		if ( input[ 0 ] && input[ 0 ].nodeType ) {
 			return input[ 0 ];
 		}
@@ -2625,6 +2821,8 @@
 				}
 				start = index + 1;
 			} while ( usedIndices[ index ] && start < len );
+			// keep track of the first unused index, so we don't search
+			// the whole of newArray for each item in oldArray unnecessarily
 			if ( index === firstUnusedIndex ) {
 				firstUnusedIndex += 1;
 			}
@@ -2644,6 +2842,7 @@
 			var updateDependant;
 			ractive._changes.push( keypath );
 			updateDependant = function( dependant ) {
+				// references need to get processed before mustaches
 				if ( dependant.type === types.REFERENCE ) {
 					dependant.update();
 				} else if ( dependant.keypath === keypath && dependant.type === types.SECTION && !dependant.inverted && dependant.docFrag ) {
@@ -2652,12 +2851,18 @@
 					dependant.update();
 				}
 			};
+			// Go through all dependant priority levels, finding merge targets
 			ractive._deps.forEach( function( depsByKeypath ) {
 				var dependants = depsByKeypath[ keypath ];
 				if ( dependants ) {
 					dependants.forEach( updateDependant );
 				}
 			} );
+			// length property has changed - notify dependants
+			// TODO in some cases (e.g. todo list example, when marking all as complete, then
+			// adding a new item (which should deactivate the 'all complete' checkbox
+			// but doesn't) this needs to happen before other updates. But doing so causes
+			// other mental problems. not sure what's going on...
 			if ( !lengthUnchanged ) {
 				notifyDependants( ractive, keypath + '.length', true );
 			}
@@ -2670,6 +2875,8 @@
 		return function merge( keypath, array, options ) {
 			var currentArray, oldArray, newArray, comparator, lengthUnchanged, newIndices, promise, fulfilPromise;
 			currentArray = this.get( keypath );
+			// If either the existing value or the new value isn't an
+			// array, just do a regular set
 			if ( !isArray( currentArray ) || !isArray( array ) ) {
 				return this.set( keypath, array, options && options.complete );
 			}
@@ -2680,6 +2887,9 @@
 					oldArray = currentArray.map( comparator );
 					newArray = array.map( comparator );
 				} catch ( err ) {
+					// fallback to an identity check - worst case scenario we have
+					// to do more DOM manipulation than we thought...
+					// ...unless we're in debug mode of course
 					if ( this.debug ) {
 						throw err;
 					} else {
@@ -2692,14 +2902,19 @@
 				oldArray = currentArray;
 				newArray = array;
 			}
+			// find new indices for members of oldArray
 			newIndices = mapOldToNewIndex( oldArray, newArray );
+			// Manage transitions
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
 			} );
 			runloop.start( this, fulfilPromise );
+			// Update the model
+			// TODO allow existing array to be updated in place, rather than replaced?
 			set( this, keypath, array, true );
 			propagateChanges( this, keypath, newIndices, lengthUnchanged );
 			runloop.end();
+			// attach callback as fulfilment handler, if specified
 			if ( options && options.complete ) {
 				promise.then( options.complete );
 			}
@@ -2711,6 +2926,9 @@
 		}
 
 		function getComparatorFunction( comparator ) {
+			// If `compare` is `true`, we use JSON.stringify to compare
+			// objects that are the same shape, but non-identical - i.e.
+			// { foo: 'bar' } !== { foo: 'bar' }
 			if ( comparator === true ) {
 				return stringify;
 			}
@@ -2743,7 +2961,10 @@
 					self.reallyUpdate();
 				}
 			};
+			// Observers are notified before any DOM changes take place (though
+			// they can defer execution until afterwards)
 			this.priority = 0;
+			// default to root as context, but allow it to be overridden
 			this.context = options && options.context ? options.context : ractive;
 		};
 		Observer.prototype = {
@@ -2766,11 +2987,14 @@
 				oldValue = this.value;
 				newValue = get( this.root, this.keypath );
 				this.value = newValue;
+				// Prevent infinite loops
 				if ( this.updating ) {
 					return;
 				}
 				this.updating = true;
 				if ( !isEqual( newValue, oldValue ) || !this.ready ) {
+					// wrap the callback in a try-catch block, and only throw error in
+					// debug mode
 					try {
 						this.callback.call( this.context, newValue, oldValue, this.keypath );
 					} catch ( err ) {
@@ -2796,6 +3020,7 @@
 				value = ractive._wrapped[ keypath ] ? ractive._wrapped[ keypath ].get() : ractive.get( keypath );
 				for ( key in value ) {
 					if ( value.hasOwnProperty( key ) && ( key !== '_ractive' || !isArray( value ) ) ) {
+						// for benefit of IE8
 						newToGet.push( keypath + '.' + key );
 					}
 				}
@@ -2838,7 +3063,10 @@
 			if ( this.defer ) {
 				this.proxies = [];
 			}
+			// Observers are notified before any DOM changes take place (though
+			// they can defer execution until afterwards)
 			this.priority = 'pattern';
+			// default to root as context, but allow it to be overridden
 			this.context = options && options.context ? options.context : ractive;
 		};
 		PatternObserver.prototype = {
@@ -2874,12 +3102,15 @@
 			},
 			reallyUpdate: function( keypath ) {
 				var value = get( this.root, keypath );
+				// Prevent infinite loops
 				if ( this.updating ) {
 					this.values[ keypath ] = value;
 					return;
 				}
 				this.updating = true;
 				if ( !isEqual( value, this.values[ keypath ] ) || !this.ready ) {
+					// wrap the callback in a try-catch block, and only throw error in
+					// debug mode
 					try {
 						this.callback.call( this.context, value, this.values[ keypath ], keypath );
 					} catch ( err ) {
@@ -2914,6 +3145,7 @@
 			var observer, isPatternObserver;
 			keypath = normaliseKeypath( keypath );
 			options = options || emptyObject;
+			// pattern observers are treated differently
 			if ( wildcard.test( keypath ) ) {
 				observer = new PatternObserver( ractive, keypath, callback, options );
 				ractive._patternObservers.push( observer );
@@ -2923,6 +3155,7 @@
 			}
 			registerDependant( observer );
 			observer.init( options.init );
+			// This flag allows observers to initialise even with undefined values
 			observer.ready = true;
 			return {
 				cancel: function() {
@@ -2943,6 +3176,7 @@
 
 		return function observe( keypath, callback, options ) {
 			var observers, map, keypaths, i;
+			// Allow a map of keypaths to handlers
 			if ( isObject( keypath ) ) {
 				options = callback;
 				map = keypath;
@@ -2961,6 +3195,7 @@
 					}
 				};
 			}
+			// Allow `ractive.observe( callback )` - i.e. observe entire model
 			if ( typeof keypath === 'function' ) {
 				options = callback;
 				callback = keypath;
@@ -2968,9 +3203,11 @@
 				return getObserverFacade( this, keypath, callback, options );
 			}
 			keypaths = keypath.split( ' ' );
+			// Single keypath
 			if ( keypaths.length === 1 ) {
 				return getObserverFacade( this, keypath, callback, options );
 			}
+			// Multiple space-separated keypaths
 			observers = [];
 			i = keypaths.length;
 			while ( i-- ) {
@@ -2991,8 +3228,14 @@
 
 	var Ractive_prototype_off = function( eventName, callback ) {
 		var subscribers, index;
+		// if no callback specified, remove all callbacks
 		if ( !callback ) {
+			// if no event name specified, remove all callbacks for all events
 			if ( !eventName ) {
+				// TODO use this code instead, once the following issue has been resolved
+				// in PhantomJS (tests are unpassable otherwise!)
+				// https://github.com/ariya/phantomjs/issues/11856
+				// defineProperty( this, '_subs', { value: create( null ), configurable: true });
 				for ( eventName in this._subs ) {
 					delete this._subs[ eventName ];
 				}
@@ -3012,6 +3255,7 @@
 	var Ractive_prototype_on = function( eventName, callback ) {
 		var self = this,
 			listeners, n;
+		// allow mutliple listeners to be bound in one go
 		if ( typeof eventName === 'object' ) {
 			listeners = [];
 			for ( n in eventName ) {
@@ -3047,6 +3291,7 @@
 			Object.create( null );
 			create = Object.create;
 		} catch ( err ) {
+			// sigh
 			create = function() {
 				var F = function() {};
 				return function( proto, props ) {
@@ -3066,28 +3311,36 @@
 		return create;
 	}();
 
-	var render_shared_initFragment = function( types, create ) {
+	var render_shared_Fragment_initialise = function( types, create ) {
 
 		return function initFragment( fragment, options ) {
 			var numItems, i, parentFragment, parentRefs, ref;
+			// The item that owns this fragment - an element, section, partial, or attribute
 			fragment.owner = options.owner;
 			parentFragment = fragment.parent = fragment.owner.parentFragment;
+			// inherited properties
 			fragment.root = options.root;
 			fragment.pNode = options.pNode;
 			fragment.pElement = options.pElement;
 			fragment.context = options.context;
+			// If parent item is a section, this may not be the only fragment
+			// that belongs to it - we need to make a note of the index
 			if ( fragment.owner.type === types.SECTION ) {
 				fragment.index = options.index;
 			}
+			// index references (the 'i' in {{#section:i}}<!-- -->{{/section}}) need to cascade
+			// down the tree
 			if ( parentFragment ) {
 				parentRefs = parentFragment.indexRefs;
 				if ( parentRefs ) {
 					fragment.indexRefs = create( null );
+					// avoids need for hasOwnProperty
 					for ( ref in parentRefs ) {
 						fragment.indexRefs[ ref ] = parentRefs[ ref ];
 					}
 				}
 			}
+			// inherit priority
 			fragment.priority = parentFragment ? parentFragment.priority + 1 : 1;
 			if ( options.indexRef ) {
 				if ( !fragment.indexRefs ) {
@@ -3095,6 +3348,7 @@
 				}
 				fragment.indexRefs[ options.indexRef ] = options.index;
 			}
+			// Time to create this fragment's child items;
 			fragment.items = [];
 			numItems = options.descriptor ? options.descriptor.length : 0;
 			for ( i = 0; i < numItems; i += 1 ) {
@@ -3108,7 +3362,69 @@
 		};
 	}( config_types, utils_create );
 
-	var render_DomFragment_shared_insertHtml = function( createElement ) {
+	var render_shared_utils_startsWithKeypath = function startsWithKeypath( target, keypath ) {
+		return target.substr( 0, keypath.length + 1 ) === keypath + '.';
+	};
+
+	var render_shared_utils_startsWith = function( startsWithKeypath ) {
+
+		return function startsWith( target, keypath ) {
+			return target === keypath || startsWithKeypath( target, keypath );
+		};
+	}( render_shared_utils_startsWithKeypath );
+
+	var render_shared_utils_getNewKeypath = function( startsWithKeypath ) {
+
+		return function getNewKeypath( targetKeypath, oldKeypath, newKeypath ) {
+			//exact match
+			if ( targetKeypath === oldKeypath ) {
+				return newKeypath;
+			}
+			//partial match based on leading keypath segments
+			if ( startsWithKeypath( targetKeypath, oldKeypath ) ) {
+				return targetKeypath.replace( oldKeypath + '.', newKeypath + '.' );
+			}
+		};
+	}( render_shared_utils_startsWithKeypath );
+
+	var render_shared_utils_assignNewKeypath = function( startsWith, getNewKeypath ) {
+
+		return function assignNewKeypath( target, property, oldKeypath, newKeypath ) {
+			if ( !target[ property ] || startsWith( target[ property ], newKeypath ) ) {
+				return;
+			}
+			target[ property ] = getNewKeypath( target[ property ], oldKeypath, newKeypath );
+		};
+	}( render_shared_utils_startsWith, render_shared_utils_getNewKeypath );
+
+	var render_shared_Fragment_reassign = function( assignNewKeypath ) {
+
+		return function reassignFragment( indexRef, newIndex, oldKeypath, newKeypath ) {
+			// If this fragment was rendered with innerHTML, we have nothing to do
+			// TODO a less hacky way of determining this
+			if ( this.html !== undefined ) {
+				return;
+			}
+			// assign new context keypath if needed
+			assignNewKeypath( this, 'context', oldKeypath, newKeypath );
+			if ( this.indexRefs && this.indexRefs[ indexRef ] !== undefined && this.indexRefs[ indexRef ] !== newIndex ) {
+				this.indexRefs[ indexRef ] = newIndex;
+			}
+			this.items.forEach( function( item ) {
+				item.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			} );
+		};
+	}( render_shared_utils_assignNewKeypath );
+
+	var render_shared_Fragment__Fragment = function( init, reassign ) {
+
+		return {
+			init: init,
+			reassign: reassign
+		};
+	}( render_shared_Fragment_initialise, render_shared_Fragment_reassign );
+
+	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
 
 		var elementCache = {}, ieBug, ieBlacklist;
 		try {
@@ -3138,13 +3454,17 @@
 				]
 			};
 		}
-		return function( html, tagName, docFrag ) {
+		return function( html, tagName, namespace, docFrag ) {
 			var container, nodes = [],
 				wrapper;
 			if ( html ) {
 				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
 					container = element( 'DIV' );
 					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
+					container = container.querySelector( '.x' );
+				} else if ( namespace === namespaces.svg ) {
+					container = element( 'DIV' );
+					container.innerHTML = '<svg class="x">' + html + '</svg>';
 					container = container.querySelector( '.x' );
 				} else {
 					container = element( tagName );
@@ -3161,7 +3481,7 @@
 		function element( tagName ) {
 			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
 		}
-	}( utils_createElement );
+	}( config_namespaces, utils_createElement );
 
 	var render_DomFragment_shared_detach = function() {
 		var node = this.node,
@@ -3187,6 +3507,8 @@
 		};
 		DomText.prototype = {
 			detach: detach,
+			reassign: function() {},
+			//no-op
 			teardown: function( destroy ) {
 				if ( destroy ) {
 					this.detach();
@@ -3206,8 +3528,10 @@
 
 		return function( thing ) {
 			if ( !thing.keypath ) {
+				// this was on the 'unresolved' list, we need to remove it
 				runloop.removeUnresolved( thing );
 			} else {
+				// this was registered as a dependant
 				unregisterDependant( thing );
 			}
 		};
@@ -3269,13 +3593,19 @@
 
 		function wrapFunction( fn, ractive, evaluator ) {
 			var prop, evaluators, index;
+			// If the function doesn't refer to `this`, we don't need
+			// to set the context, because we're not doing `this.get()`
+			// (which is how dependencies are tracked)
 			if ( !thisPattern.test( fn.toString() ) ) {
 				defineProperty( fn, '_nowrap', {
+					// no point doing this every time
 					value: true
 				} );
 				return fn;
 			}
+			// If this function is being wrapped for the first time...
 			if ( !fn[ '_' + ractive._guid ] ) {
+				// ...we need to do some work
 				defineProperty( fn, '_' + ractive._guid, {
 					value: function() {
 						var originalCaptured, result, i, evaluator;
@@ -3291,6 +3621,7 @@
 								evaluator.updateSoftDependencies( ractive._captured );
 							}
 						}
+						// reset
 						ractive._captured = originalCaptured;
 						return result;
 					},
@@ -3303,11 +3634,14 @@
 				}
 				fn[ '_' + ractive._guid + '_evaluators' ] = [];
 			}
+			// We need to make a note of which evaluators are using this function,
+			// so that they can all be notified of changes
 			evaluators = fn[ '_' + ractive._guid + '_evaluators' ];
 			index = evaluators.indexOf( evaluator );
 			if ( index === -1 ) {
 				evaluators.push( evaluator );
 			}
+			// Return the wrapped function
 			return fn[ '_' + ractive._guid ];
 		}
 	}( config_types, utils_isEqual, utils_defineProperty, shared_registerDependant, shared_unregisterDependant );
@@ -3352,7 +3686,8 @@
 				if ( !arg ) {
 					return;
 				}
-				if ( arg.isIndexRef ) {
+				if ( arg.indexRef ) {
+					// this is an index ref... we don't need to register a dependant
 					evaluator.values[ i ] = arg.value;
 				} else {
 					evaluator.refs.push( new Reference( root, arg.keypath, evaluator, i, priority ) );
@@ -3362,6 +3697,7 @@
 		};
 		Evaluator.prototype = {
 			bubble: function() {
+				// If we only have one reference, we can update immediately...
 				if ( this.selfUpdating ) {
 					this.update();
 				} else if ( !this.deferred ) {
@@ -3371,6 +3707,7 @@
 			},
 			update: function() {
 				var value;
+				// prevent infinite loops
 				if ( this.evaluating ) {
 					return this;
 				}
@@ -3392,6 +3729,7 @@
 				this.evaluating = false;
 				return this;
 			},
+			// TODO should evaluators ever get torn down? At present, they don't...
 			teardown: function() {
 				while ( this.refs.length ) {
 					this.refs.pop().teardown();
@@ -3399,6 +3737,8 @@
 				clearCache( this.root, this.keypath );
 				this.root._evaluators[ this.keypath ] = null;
 			},
+			// This method forces the evaluator to sync with the current model
+			// in the case of a smart update
 			refresh: function() {
 				if ( !this.selfUpdating ) {
 					this.deferred = true;
@@ -3417,6 +3757,7 @@
 				if ( !this.softRefs ) {
 					this.softRefs = [];
 				}
+				// teardown any references that are no longer relevant
 				i = this.softRefs.length;
 				while ( i-- ) {
 					ref = this.softRefs[ i ];
@@ -3426,6 +3767,7 @@
 						ref.teardown();
 					}
 				}
+				// add references for any new soft dependencies
 				i = softDeps.length;
 				while ( i-- ) {
 					keypath = softDeps[ i ];
@@ -3456,7 +3798,7 @@
 		}
 	}( global_runloop, utils_warn, utils_isEqual, shared_clearCache, shared_notifyDependants, shared_adaptIfNecessary, render_shared_Evaluator_Reference, render_shared_Evaluator_SoftReference );
 
-	var render_shared_Resolvers_ExpressionResolver = function( removeFromArray, resolveRef, Unresolved, Evaluator ) {
+	var render_shared_Resolvers_ExpressionResolver = function( removeFromArray, resolveRef, Unresolved, Evaluator, getNewKeypath ) {
 
 		var ExpressionResolver = function( owner, parentFragment, expression, callback ) {
 			var expressionResolver = this,
@@ -3470,26 +3812,31 @@
 			this.unresolved = [];
 			this.pending = 0;
 			indexRefs = parentFragment.indexRefs;
+			// some expressions don't have references. edge case, but, yeah.
 			if ( !expression.r || !expression.r.length ) {
 				this.resolved = this.ready = true;
 				this.bubble();
 				return;
 			}
+			// Create resolvers for each reference
 			expression.r.forEach( function( reference, i ) {
 				var index, keypath, unresolved;
+				// Is this an index reference?
 				if ( indexRefs && ( index = indexRefs[ reference ] ) !== undefined ) {
 					args[ i ] = {
-						isIndexRef: true,
+						indexRef: reference,
 						value: index
 					};
 					return;
 				}
+				// Can we resolve it immediately?
 				if ( keypath = resolveRef( ractive, reference, parentFragment ) ) {
 					args[ i ] = {
 						keypath: keypath
 					};
 					return;
 				}
+				// Couldn't resolve yet
 				args[ i ] = undefined;
 				expressionResolver.pending += 1;
 				unresolved = new Unresolved( ractive, reference, parentFragment, function( keypath ) {
@@ -3503,11 +3850,9 @@
 		};
 		ExpressionResolver.prototype = {
 			bubble: function() {
-				var oldKeypath;
 				if ( !this.ready ) {
 					return;
 				}
-				oldKeypath = this.keypath;
 				this.uniqueString = getUniqueString( this.str, this.args );
 				this.keypath = getKeypath( this.uniqueString );
 				this.createEvaluator();
@@ -3524,31 +3869,56 @@
 					keypath: keypath
 				};
 				this.bubble();
+				// when all references have been resolved, we can flag the entire expression
+				// as having been resolved
 				this.resolved = !--this.pending;
 			},
 			createEvaluator: function() {
 				var evaluator;
+				// only if it doesn't exist yet!
 				if ( !this.root._evaluators[ this.keypath ] ) {
 					evaluator = new Evaluator( this.root, this.keypath, this.uniqueString, this.str, this.args, this.owner.priority );
 					this.root._evaluators[ this.keypath ] = evaluator;
 					evaluator.update();
 				} else {
+					// we need to trigger a refresh of the evaluator, since it
+					// will have become de-synced from the model if we're in a
+					// reassignment cycle
 					this.root._evaluators[ this.keypath ].refresh();
+				}
+			},
+			reassign: function( indexRef, newIndex, oldKeypath, newKeypath ) {
+				var changed;
+				this.args.forEach( function( arg ) {
+					var changedKeypath;
+					if ( arg.keypath && ( changedKeypath = getNewKeypath( arg.keypath, oldKeypath, newKeypath ) ) ) {
+						arg.keypath = changedKeypath;
+						changed = true;
+					} else if ( arg.indexRef === indexRef ) {
+						arg.value = newIndex;
+						changed = true;
+					}
+				} );
+				if ( changed ) {
+					this.bubble();
 				}
 			}
 		};
 		return ExpressionResolver;
 
 		function getUniqueString( str, args ) {
+			// get string that is unique to this expression
 			return str.replace( /\$\{([0-9]+)\}/g, function( match, $1 ) {
 				return args[ $1 ] ? args[ $1 ].value || args[ $1 ].keypath : 'undefined';
 			} );
 		}
 
 		function getKeypath( uniqueString ) {
+			// Sanitize by removing any periods or square brackets. Otherwise
+			// we can't split the keypath into keys!
 			return '${' + uniqueString.replace( /[\.\[\]]/g, '-' ) + '}';
 		}
-	}( utils_removeFromArray, shared_resolveRef, shared_Unresolved, render_shared_Evaluator__Evaluator );
+	}( utils_removeFromArray, shared_resolveRef, shared_Unresolved, render_shared_Evaluator__Evaluator, render_shared_utils_getNewKeypath );
 
 	var render_shared_Resolvers_KeypathExpressionResolver = function( types, removeFromArray, resolveRef, Unresolved, registerDependant, unregisterDependant, ExpressionResolver ) {
 
@@ -3564,6 +3934,7 @@
 			this.pending = 0;
 			this.unresolved = [];
 			members = this.members = [];
+			this.indexRefMembers = [];
 			this.keypathObservers = [];
 			this.expressionResolvers = [];
 			descriptor.m.forEach( function( member, i ) {
@@ -3572,11 +3943,17 @@
 					resolver.members[ i ] = member;
 					return;
 				}
+				// simple reference?
 				if ( member.t === types.REFERENCE ) {
 					ref = member.n;
 					indexRefs = parentFragment.indexRefs;
 					if ( indexRefs && ( index = indexRefs[ ref ] ) !== undefined ) {
 						members[ i ] = index;
+						// make a note of it, in case of reassignments
+						resolver.indexRefMembers.push( {
+							ref: ref,
+							index: i
+						} );
 						return;
 					}
 					dynamic = true;
@@ -3584,10 +3961,12 @@
 						var keypathObserver = new KeypathObserver( ractive, keypath, mustache.priority, resolver, i );
 						resolver.keypathObservers.push( keypathObserver );
 					};
+					// Can we resolve the reference immediately?
 					if ( keypath = resolveRef( ractive, ref, parentFragment ) ) {
 						createKeypathObserver( keypath );
 						return;
 					}
+					// Couldn't resolve yet
 					members[ i ] = undefined;
 					resolver.pending += 1;
 					unresolved = new Unresolved( ractive, ref, parentFragment, function( keypath ) {
@@ -3597,6 +3976,7 @@
 					resolver.unresolved.push( unresolved );
 					return null;
 				}
+				// Otherwise we have an expression in its own right
 				dynamic = true;
 				resolver.pending += 1;
 				expressionResolver = new ExpressionResolver( resolver, parentFragment, member, function( keypath ) {
@@ -3605,6 +3985,8 @@
 				} );
 				resolver.unresolved.push( expressionResolver );
 			} );
+			// Some keypath expressions (e.g. foo["bar"], or foo[i] where `i` is an
+			// index reference) won't change. So we don't need to register any watchers
 			if ( !dynamic ) {
 				keypath = this.getKeypath();
 				callback( keypath );
@@ -3627,6 +4009,8 @@
 				var keypathObserver = new KeypathObserver( this.root, value, this.mustache.priority, this, index );
 				keypathObserver.update();
 				this.keypathObservers.push( keypathObserver );
+				// when all references have been resolved, we can flag the entire expression
+				// as having been resolved
 				this.resolved = !--this.pending;
 				this.bubble();
 			},
@@ -3634,6 +4018,20 @@
 				var unresolved;
 				while ( unresolved = this.unresolved.pop() ) {
 					unresolved.teardown();
+				}
+			},
+			reassign: function( indexRef, newIndex ) {
+				var changed, i, member;
+				i = this.indexRefMembers.length;
+				while ( i-- ) {
+					member = this.indexRefMembers[ i ];
+					if ( member.ref === indexRef ) {
+						changed = true;
+						this.members[ member.index ] = newIndex;
+					}
+				}
+				if ( changed ) {
+					this.bubble();
 				}
 			}
 		};
@@ -3659,7 +4057,7 @@
 		return KeypathExpressionResolver;
 	}( config_types, utils_removeFromArray, shared_resolveRef, shared_Unresolved, shared_registerDependant, shared_unregisterDependant, render_shared_Resolvers_ExpressionResolver );
 
-	var render_shared_initMustache = function( runloop, resolveRef, KeypathExpressionResolver, ExpressionResolver ) {
+	var render_shared_Mustache_initialise = function( runloop, resolveRef, KeypathExpressionResolver, ExpressionResolver ) {
 
 		return function initMustache( mustache, options ) {
 			var ref, keypath, indexRefs, index, parentFragment, descriptor, resolve;
@@ -3674,6 +4072,8 @@
 			resolve = function( keypath ) {
 				mustache.resolve( keypath );
 			};
+			// if this is a simple mustache, with a reference, we just need to resolve
+			// the reference to a keypath
 			if ( ref = descriptor.r ) {
 				indexRefs = parentFragment.indexRefs;
 				if ( indexRefs && ( index = indexRefs[ ref ] ) !== undefined ) {
@@ -3690,229 +4090,21 @@
 					}
 				}
 			}
+			// if it's an expression, we have a bit more work to do
 			if ( options.descriptor.x ) {
 				mustache.resolver = new ExpressionResolver( mustache, parentFragment, options.descriptor.x, resolve );
 			}
 			if ( options.descriptor.kx ) {
 				mustache.resolver = new KeypathExpressionResolver( mustache, options.descriptor.kx, resolve );
 			}
+			// Special case - inverted sections
 			if ( mustache.descriptor.n && !mustache.hasOwnProperty( 'value' ) ) {
 				mustache.render( undefined );
 			}
 		};
 	}( global_runloop, shared_resolveRef, render_shared_Resolvers_KeypathExpressionResolver, render_shared_Resolvers_ExpressionResolver );
 
-	var shared_reassignFragment_utils_startsWithKeypath = function startsWithKeypath( target, keypath ) {
-		return target.substr( 0, keypath.length + 1 ) === keypath + '.';
-	};
-
-	var shared_reassignFragment_utils_startsWith = function( startsWithKeypath ) {
-
-		return function startsWith( target, keypath ) {
-			return target === keypath || startsWithKeypath( target, keypath );
-		};
-	}( shared_reassignFragment_utils_startsWithKeypath );
-
-	var shared_reassignFragment_utils_getNewKeypath = function( startsWithKeypath ) {
-
-		return function getNewKeypath( targetKeypath, oldKeypath, newKeypath ) {
-			if ( targetKeypath === oldKeypath ) {
-				return newKeypath;
-			}
-			if ( startsWithKeypath( targetKeypath, oldKeypath ) ) {
-				return targetKeypath.replace( oldKeypath + '.', newKeypath + '.' );
-			}
-		};
-	}( shared_reassignFragment_utils_startsWithKeypath );
-
-	var shared_reassignFragment_utils_assignNewKeypath = function( startsWith, getNewKeypath ) {
-
-		return function assignNewKeypath( target, property, oldKeypath, newKeypath ) {
-			if ( !target[ property ] || startsWith( target[ property ], newKeypath ) ) {
-				return;
-			}
-			target[ property ] = getNewKeypath( target[ property ], oldKeypath, newKeypath );
-		};
-	}( shared_reassignFragment_utils_startsWith, shared_reassignFragment_utils_getNewKeypath );
-
-	var shared_reassignFragment_reassignMustache = function( circular, getNewKeypath, ExpressionResolver ) {
-
-		var reassignFragment;
-		circular.push( function() {
-			reassignFragment = circular.reassignFragment;
-		} );
-		return function reassignMustache( mustache, indexRef, newIndex, oldKeypath, newKeypath ) {
-			var updated, i;
-			if ( mustache.descriptor.x ) {
-				if ( mustache.resolver ) {
-					mustache.resolver.teardown();
-				}
-				mustache.resolver = new ExpressionResolver( mustache, mustache.parentFragment, mustache.descriptor.x, function( keypath ) {
-					mustache.resolve( keypath );
-				} );
-			}
-			if ( mustache.keypath ) {
-				updated = getNewKeypath( mustache.keypath, oldKeypath, newKeypath );
-				if ( updated ) {
-					mustache.resolve( updated );
-				}
-			} else if ( indexRef !== undefined && mustache.indexRef === indexRef ) {
-				mustache.value = newIndex;
-				mustache.render( newIndex );
-			}
-			if ( mustache.fragments ) {
-				i = mustache.fragments.length;
-				while ( i-- ) {
-					reassignFragment( mustache.fragments[ i ], indexRef, newIndex, oldKeypath, newKeypath );
-				}
-			}
-		};
-	}( circular, shared_reassignFragment_utils_getNewKeypath, render_shared_Resolvers_ExpressionResolver );
-
-	var shared_reassignFragment_reassignElement = function( circular, assignNewKeypath ) {
-
-		var reassignFragment;
-		circular.push( function() {
-			reassignFragment = circular.reassignFragment;
-		} );
-		return function reassignElement( element, indexRef, newIndex, oldKeypath, newKeypath ) {
-			var i, attribute, storage, masterEventName, proxies, proxy, binding, bindings, liveQueries, ractive;
-			i = element.attributes.length;
-			while ( i-- ) {
-				attribute = element.attributes[ i ];
-				if ( attribute.fragment ) {
-					reassignFragment( attribute.fragment, indexRef, newIndex, oldKeypath, newKeypath );
-					if ( attribute.twoway ) {
-						attribute.updateBindings();
-					}
-				}
-			}
-			if ( storage = element.node._ractive ) {
-				assignNewKeypath( storage, 'keypath', oldKeypath, newKeypath );
-				if ( indexRef != undefined ) {
-					storage.index[ indexRef ] = newIndex;
-				}
-				for ( masterEventName in storage.events ) {
-					proxies = storage.events[ masterEventName ].proxies;
-					i = proxies.length;
-					while ( i-- ) {
-						proxy = proxies[ i ];
-						if ( typeof proxy.n === 'object' ) {
-							reassignFragment( proxy.a, indexRef, newIndex, oldKeypath, newKeypath );
-						}
-						if ( proxy.d ) {
-							reassignFragment( proxy.d, indexRef, newIndex, oldKeypath, newKeypath );
-						}
-					}
-				}
-				if ( binding = storage.binding ) {
-					if ( binding.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
-						bindings = storage.root._twowayBindings[ binding.keypath ];
-						bindings.splice( bindings.indexOf( binding ), 1 );
-						binding.keypath = binding.keypath.replace( oldKeypath, newKeypath );
-						bindings = storage.root._twowayBindings[ binding.keypath ] || ( storage.root._twowayBindings[ binding.keypath ] = [] );
-						bindings.push( binding );
-					}
-				}
-			}
-			if ( element.fragment ) {
-				reassignFragment( element.fragment, indexRef, newIndex, oldKeypath, newKeypath );
-			}
-			if ( liveQueries = element.liveQueries ) {
-				ractive = element.root;
-				i = liveQueries.length;
-				while ( i-- ) {
-					liveQueries[ i ]._makeDirty();
-				}
-			}
-		};
-	}( circular, shared_reassignFragment_utils_assignNewKeypath );
-
-	var shared_reassignFragment_reassignComponent = function( hasOwnProperty, getNewKeypath ) {
-
-		return function reassignComponent( component, indexRef, newIndex, oldKeypath, newKeypath ) {
-			var childInstance = component.instance,
-				parentInstance = childInstance._parent,
-				indexRefAlias;
-			component.bindings.forEach( function( binding ) {
-				var updated;
-				if ( binding.root !== parentInstance ) {
-					return;
-				}
-				if ( binding.keypath === indexRef ) {
-					childInstance.set( binding.otherKeypath, newIndex );
-				}
-				if ( updated = getNewKeypath( binding.keypath, oldKeypath, newKeypath ) ) {
-					binding.reassign( updated );
-				}
-			} );
-			if ( indexRefAlias = component.indexRefBindings[ indexRef ] ) {
-				childInstance.set( indexRefAlias, newIndex );
-			}
-		};
-	}( utils_hasOwnProperty, shared_reassignFragment_utils_getNewKeypath );
-
-	var shared_reassignFragment__reassignFragment = function( circular, types, assignNewKeypath, reassignMustache, reassignElement, reassignComponent ) {
-
-		var reassignFragment = function( fragment, indexRef, newIndex, oldKeypath, newKeypath ) {
-			var i, item, query;
-			if ( fragment.html !== undefined ) {
-				return;
-			}
-			assignNewKeypath( fragment, 'context', oldKeypath, newKeypath );
-			if ( fragment.indexRefs && fragment.indexRefs[ indexRef ] !== undefined && fragment.indexRefs[ indexRef ] !== newIndex ) {
-				fragment.indexRefs[ indexRef ] = newIndex;
-			}
-			i = fragment.items.length;
-			while ( i-- ) {
-				item = fragment.items[ i ];
-				switch ( item.type ) {
-					case types.ELEMENT:
-						reassignElement( item, indexRef, newIndex, oldKeypath, newKeypath );
-						break;
-					case types.PARTIAL:
-						reassignFragment( item.fragment, indexRef, newIndex, oldKeypath, newKeypath );
-						break;
-					case types.COMPONENT:
-						reassignComponent( item, indexRef, newIndex, oldKeypath, newKeypath );
-						if ( query = fragment.root._liveComponentQueries[ item.name ] ) {
-							query._makeDirty();
-						}
-						break;
-					case types.SECTION:
-					case types.INTERPOLATOR:
-					case types.TRIPLE:
-						reassignMustache( item, indexRef, newIndex, oldKeypath, newKeypath );
-						break;
-				}
-			}
-		};
-		return circular.reassignFragment = reassignFragment;
-	}( circular, config_types, shared_reassignFragment_utils_assignNewKeypath, shared_reassignFragment_reassignMustache, shared_reassignFragment_reassignElement, shared_reassignFragment_reassignComponent );
-
-	var render_shared_resolveMustache = function( types, registerDependant, unregisterDependant, reassignFragment ) {
-
-		return function resolveMustache( keypath ) {
-			var i;
-			if ( keypath === this.keypath ) {
-				return;
-			}
-			if ( this.registered ) {
-				unregisterDependant( this );
-				if ( this.type === types.SECTION ) {
-					i = this.fragments.length;
-					while ( i-- ) {
-						reassignFragment( this.fragments[ i ], null, null, this.keypath, keypath );
-					}
-				}
-			}
-			this.keypath = keypath;
-			registerDependant( this );
-			this.update();
-		};
-	}( config_types, shared_registerDependant, shared_unregisterDependant, shared_reassignFragment__reassignFragment );
-
-	var render_shared_updateMustache = function( isEqual, get ) {
+	var render_shared_Mustache_update = function( isEqual, get ) {
 
 		var options = {
 			evaluateWrapped: true
@@ -3926,7 +4118,76 @@
 		};
 	}( utils_isEqual, shared_get__get );
 
-	var render_DomFragment_Interpolator = function( types, teardown, initMustache, resolveMustache, updateMustache, detach ) {
+	var render_shared_Mustache_resolve = function( types, registerDependant, unregisterDependant ) {
+
+		return function resolveMustache( keypath ) {
+			var i;
+			// In some cases, we may resolve to the same keypath (if this is
+			// an expression mustache that was reassigned due to an ancestor's
+			// keypath) - in which case, this is a no-op
+			if ( keypath === this.keypath ) {
+				return;
+			}
+			// if we resolved previously, we need to unregister
+			if ( this.registered ) {
+				unregisterDependant( this );
+				// is this a section? if so, we may have children that need
+				// to be reassigned
+				// TODO only DOM sections?
+				if ( this.type === types.SECTION ) {
+					i = this.fragments.length;
+					while ( i-- ) {
+						this.fragments[ i ].reassign( null, null, this.keypath, keypath );
+					}
+				}
+			}
+			this.keypath = keypath;
+			registerDependant( this );
+			this.update();
+		};
+	}( config_types, shared_registerDependant, shared_unregisterDependant );
+
+	var render_shared_Mustache_reassign = function( getNewKeypath ) {
+
+		return function reassignMustache( indexRef, newIndex, oldKeypath, newKeypath ) {
+			var updated, i;
+			// expression mustache?
+			if ( this.resolver ) {
+				this.resolver.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			} else if ( this.keypath ) {
+				updated = getNewKeypath( this.keypath, oldKeypath, newKeypath );
+				// was a new keypath created?
+				if ( updated ) {
+					// resolve it
+					this.resolve( updated );
+				}
+			} else if ( indexRef !== undefined && this.indexRef === indexRef ) {
+				this.value = newIndex;
+				this.render( newIndex );
+			}
+			// otherwise, it's an unresolved reference. the context stack has been updated
+			// so it will take care of itself
+			// if it's a section mustache, we need to go through any children
+			if ( this.fragments ) {
+				i = this.fragments.length;
+				while ( i-- ) {
+					this.fragments[ i ].reassign( indexRef, newIndex, oldKeypath, newKeypath );
+				}
+			}
+		};
+	}( render_shared_utils_getNewKeypath );
+
+	var render_shared_Mustache__Mustache = function( init, update, resolve, reassign ) {
+
+		return {
+			init: init,
+			update: update,
+			resolve: resolve,
+			reassign: reassign
+		};
+	}( render_shared_Mustache_initialise, render_shared_Mustache_update, render_shared_Mustache_resolve, render_shared_Mustache_reassign );
+
+	var render_DomFragment_Interpolator = function( types, teardown, Mustache, detach ) {
 
 		var DomInterpolator, lessThan, greaterThan;
 		lessThan = /</g;
@@ -3937,11 +4198,13 @@
 				this.node = document.createTextNode( '' );
 				docFrag.appendChild( this.node );
 			}
-			initMustache( this, options );
+			// extend Mustache
+			Mustache.init( this, options );
 		};
 		DomInterpolator.prototype = {
-			update: updateMustache,
-			resolve: resolveMustache,
+			update: Mustache.update,
+			resolve: Mustache.resolve,
+			reassign: Mustache.reassign,
 			detach: detach,
 			teardown: function( destroy ) {
 				if ( destroy ) {
@@ -3963,9 +4226,9 @@
 			}
 		};
 		return DomInterpolator;
-	}( config_types, shared_teardown, render_shared_initMustache, render_shared_resolveMustache, render_shared_updateMustache, render_DomFragment_shared_detach );
+	}( config_types, shared_teardown, render_shared_Mustache__Mustache, render_DomFragment_shared_detach );
 
-	var render_DomFragment_Section_prototype_merge = function( reassignFragment ) {
+	var render_DomFragment_Section_prototype_merge = function() {
 
 		var toTeardown = [];
 		return function sectionMerge( newIndices ) {
@@ -3973,6 +4236,7 @@
 				parentFragment, firstChange, i, newLength, reassignedFragments, fragmentOptions, fragment, nextNode;
 			parentFragment = this.parentFragment;
 			reassignedFragments = [];
+			// first, reassign existing fragments
 			newIndices.forEach( function reassignIfNecessary( newIndex, oldIndex ) {
 				var fragment, by, oldKeypath, newKeypath;
 				if ( newIndex === oldIndex ) {
@@ -3982,27 +4246,33 @@
 				if ( firstChange === undefined ) {
 					firstChange = oldIndex;
 				}
+				// does this fragment need to be torn down?
 				if ( newIndex === -1 ) {
 					toTeardown.push( section.fragments[ oldIndex ] );
 					return;
 				}
+				// Otherwise, it needs to be reassigned to a new index
 				fragment = section.fragments[ oldIndex ];
 				by = newIndex - oldIndex;
 				oldKeypath = section.keypath + '.' + oldIndex;
 				newKeypath = section.keypath + '.' + newIndex;
-				reassignFragment( fragment, section.descriptor.i, oldIndex, newIndex, by, oldKeypath, newKeypath );
+				fragment.reassign( section.descriptor.i, oldIndex, newIndex, by, oldKeypath, newKeypath );
 				reassignedFragments[ newIndex ] = fragment;
 			} );
 			while ( fragment = toTeardown.pop() ) {
 				fragment.teardown( true );
 			}
+			// If nothing changed with the existing fragments, then we start adding
+			// new fragments at the end...
 			if ( firstChange === undefined ) {
 				firstChange = this.length;
 			}
 			this.length = newLength = this.root.get( this.keypath ).length;
 			if ( newLength === firstChange ) {
+				// ...unless there are no new fragments to add
 				return;
 			}
+			// Prepare new fragment options
 			fragmentOptions = {
 				descriptor: this.descriptor.f,
 				root: this.root,
@@ -4012,7 +4282,10 @@
 			if ( this.descriptor.i ) {
 				fragmentOptions.indexRef = this.descriptor.i;
 			}
+			// Add as many new fragments as we need to, or add back existing
+			// (detached) fragments
 			for ( i = firstChange; i < newLength; i += 1 ) {
+				// is this an existing fragment?
 				if ( fragment = reassignedFragments[ i ] ) {
 					this.docFrag.appendChild( fragment.detach( false ) );
 				} else {
@@ -4022,10 +4295,11 @@
 				}
 				this.fragments[ i ] = fragment;
 			}
+			// reinsert fragment
 			nextNode = parentFragment.findNextNode( this );
 			parentFragment.pNode.insertBefore( this.docFrag, nextNode );
 		};
-	}( shared_reassignFragment__reassignFragment );
+	}();
 
 	var render_shared_updateSection = function( isArray, isObject ) {
 
@@ -4037,10 +4311,13 @@
 				pElement: section.parentFragment.pElement,
 				owner: section
 			};
+			// if section is inverted, only check for truthiness/falsiness
 			if ( section.descriptor.n ) {
 				updateConditionalSection( section, value, true, fragmentOptions );
 				return;
 			}
+			// otherwise we need to work out what sort of section we're dealing with
+			// if value is an array, or an object with an index reference, iterate through
 			if ( isArray( value ) ) {
 				updateListSection( section, value, fragmentOptions );
 			} else if ( isObject( value ) || typeof value === 'function' ) {
@@ -4057,6 +4334,7 @@
 		function updateListSection( section, value, fragmentOptions ) {
 			var i, length, fragmentsToRemove;
 			length = value.length;
+			// if the array is shorter than it was previously, remove items
 			if ( length < section.length ) {
 				fragmentsToRemove = section.fragments.splice( length, section.length - length );
 				while ( fragmentsToRemove.length ) {
@@ -4064,7 +4342,9 @@
 				}
 			} else {
 				if ( length > section.length ) {
+					// add any new ones
 					for ( i = section.length; i < length; i += 1 ) {
+						// append list item to context stack
 						fragmentOptions.context = section.keypath + '.' + i;
 						fragmentOptions.index = i;
 						if ( section.descriptor.i ) {
@@ -4080,6 +4360,7 @@
 		function updateListObjectSection( section, value, fragmentOptions ) {
 			var id, i, hasKey, fragment;
 			hasKey = section.hasKey || ( section.hasKey = {} );
+			// remove any fragments that should no longer exist
 			i = section.fragments.length;
 			while ( i-- ) {
 				fragment = section.fragments[ i ];
@@ -4089,6 +4370,7 @@
 					hasKey[ fragment.index ] = false;
 				}
 			}
+			// add any that haven't been created yet
 			for ( id in value ) {
 				if ( !hasKey[ id ] ) {
 					fragmentOptions.context = section.keypath + '.' + id;
@@ -4104,7 +4386,11 @@
 		}
 
 		function updateContextSection( section, fragmentOptions ) {
+			// ...then if it isn't rendered, render it, adding section.keypath to the context stack
+			// (if it is already rendered, then any children dependent on the context stack
+			// will update themselves without any prompting)
 			if ( !section.length ) {
+				// append this section to the context stack
 				fragmentOptions.context = section.keypath;
 				fragmentOptions.index = 0;
 				section.fragments[ 0 ] = section.createFragment( fragmentOptions );
@@ -4122,6 +4408,7 @@
 			}
 			if ( doRender ) {
 				if ( !section.length ) {
+					// no change to context stack
 					fragmentOptions.index = 0;
 					section.fragments[ 0 ] = section.createFragment( fragmentOptions );
 					section.length = 1;
@@ -4143,124 +4430,146 @@
 
 		return function DomSection_prototype_render( value ) {
 			var nextNode, wrapped;
+			// with sections, we need to get the fake value if we have a wrapped object
 			if ( wrapped = this.root._wrapped[ this.keypath ] ) {
 				value = wrapped.get();
 			}
+			// prevent sections from rendering multiple times (happens if
+			// evaluators evaluate while update is happening)
 			if ( this.rendering ) {
 				return;
 			}
 			this.rendering = true;
 			updateSection( this, value );
 			this.rendering = false;
+			// if we have no new nodes to insert (i.e. the section length stayed the
+			// same, or shrank), we don't need to go any further
 			if ( this.docFrag && !this.docFrag.childNodes.length ) {
 				return;
 			}
+			// if this isn't the initial render, we need to insert any new nodes in
+			// the right place
 			if ( !this.initialising && isClient ) {
+				// Normally this is just a case of finding the next node, and inserting
+				// items before it...
 				nextNode = this.parentFragment.findNextNode( this );
 				if ( nextNode && nextNode.parentNode === this.parentFragment.pNode ) {
 					this.parentFragment.pNode.insertBefore( this.docFrag, nextNode );
 				} else {
+					// TODO could there be a situation in which later nodes could have
+					// been attached to the parent node, i.e. we need to find a sibling
+					// to insert before?
 					this.parentFragment.pNode.appendChild( this.docFrag );
 				}
 			}
 		};
 	}( config_isClient, render_shared_updateSection );
 
-	var render_DomFragment_Section_reassignFragments = function( reassignFragment ) {
-
-		return function( section, start, end, by ) {
-			if ( start + by === end ) {
-				return;
-			}
-			if ( start === end ) {
-				return;
-			}
-			var i, fragment, indexRef, oldIndex, newIndex, oldKeypath, newKeypath;
-			indexRef = section.descriptor.i;
-			for ( i = start; i < end; i += 1 ) {
-				fragment = section.fragments[ i ];
-				oldIndex = i - by;
-				newIndex = i;
-				oldKeypath = section.keypath + '.' + ( i - by );
-				newKeypath = section.keypath + '.' + i;
-				fragment.index += by;
-				reassignFragment( fragment, indexRef, newIndex, oldKeypath, newKeypath );
-			}
-		};
-	}( shared_reassignFragment__reassignFragment );
+	var render_DomFragment_Section_reassignFragments = function( section, start, end, by ) {
+		var i, fragment, indexRef, oldKeypath, newKeypath;
+		indexRef = section.descriptor.i;
+		for ( i = start; i < end; i += 1 ) {
+			fragment = section.fragments[ i ];
+			oldKeypath = section.keypath + '.' + ( i - by );
+			newKeypath = section.keypath + '.' + i;
+			// change the fragment index
+			fragment.index = i;
+			fragment.reassign( indexRef, i, oldKeypath, newKeypath );
+		}
+	};
 
 	var render_DomFragment_Section_prototype_splice = function( reassignFragments ) {
 
 		return function( spliceSummary ) {
 			var section = this,
-				insertionPoint, balance, i, start, end, insertStart, insertEnd, spliceArgs, fragmentOptions;
+				balance, start, insertStart, insertEnd, spliceArgs;
 			balance = spliceSummary.balance;
 			if ( !balance ) {
+				// The array length hasn't changed - we don't need to add or remove anything
 				return;
 			}
-			section.rendering = true;
 			start = spliceSummary.start;
-			if ( balance < 0 ) {
-				end = start - balance;
-				for ( i = start; i < end; i += 1 ) {
-					section.fragments[ i ].teardown( true );
-				}
-				section.fragments.splice( start, -balance );
-			} else {
-				fragmentOptions = {
-					descriptor: section.descriptor.f,
-					root: section.root,
-					pNode: section.parentFragment.pNode,
-					owner: section
-				};
-				if ( section.descriptor.i ) {
-					fragmentOptions.indexRef = section.descriptor.i;
-				}
-				insertStart = start + spliceSummary.removed;
-				insertEnd = start + spliceSummary.added;
-				insertionPoint = section.fragments[ insertStart ] ? section.fragments[ insertStart ].firstNode() : section.parentFragment.findNextNode( section );
-				spliceArgs = [
-					insertStart,
-					0
-				].concat( new Array( balance ) );
-				section.fragments.splice.apply( section.fragments, spliceArgs );
-				for ( i = insertStart; i < insertEnd; i += 1 ) {
-					fragmentOptions.context = section.keypath + '.' + i;
-					fragmentOptions.index = i;
-					section.fragments[ i ] = section.createFragment( fragmentOptions );
-				}
-				section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
-			}
 			section.length += balance;
-			reassignFragments( section, start, section.length, balance );
-			section.rendering = false;
+			// If more items were removed from the array than added, we tear down
+			// the excess fragments and remove them...
+			if ( balance < 0 ) {
+				section.fragments.splice( start, -balance ).forEach( teardown );
+				// Reassign fragments after the ones we've just removed
+				reassignFragments( section, start, section.length, balance );
+				// Nothing more to do
+				return;
+			}
+			// ...otherwise we need to add some things to the DOM.
+			insertStart = start + spliceSummary.removed;
+			insertEnd = start + spliceSummary.added;
+			// Make room for the new fragments by doing a splice that simulates
+			// what happened to the data array
+			spliceArgs = [
+				insertStart,
+				0
+			];
+			spliceArgs.length += balance;
+			section.fragments.splice.apply( section.fragments, spliceArgs );
+			// Reassign existing fragments at the end of the array
+			reassignFragments( section, insertEnd, section.length, balance );
+			// Create the new ones
+			renderNewFragments( section, insertStart, insertEnd );
 		};
+
+		function teardown( fragment ) {
+			fragment.teardown( true );
+		}
+
+		function renderNewFragments( section, start, end ) {
+			var fragmentOptions, i, insertionPoint;
+			section.rendering = true;
+			fragmentOptions = {
+				descriptor: section.descriptor.f,
+				root: section.root,
+				pNode: section.parentFragment.pNode,
+				owner: section,
+				indexRef: section.descriptor.i
+			};
+			for ( i = start; i < end; i += 1 ) {
+				fragmentOptions.context = section.keypath + '.' + i;
+				fragmentOptions.index = i;
+				section.fragments[ i ] = section.createFragment( fragmentOptions );
+			}
+			// Figure out where these new nodes need to be inserted
+			insertionPoint = section.fragments[ end ] ? section.fragments[ end ].firstNode() : section.parentFragment.findNextNode( section );
+			// Append docfrag in front of insertion point
+			section.parentFragment.pNode.insertBefore( section.docFrag, insertionPoint );
+			section.rendering = false;
+		}
 	}( render_DomFragment_Section_reassignFragments );
 
-	var render_DomFragment_Section__Section = function( types, initMustache, updateMustache, resolveMustache, merge, render, splice, teardown, circular ) {
+	var render_DomFragment_Section__Section = function( types, Mustache, merge, render, splice, teardown, circular ) {
 
 		var DomSection, DomFragment;
 		circular.push( function() {
 			DomFragment = circular.DomFragment;
 		} );
+		// Section
 		DomSection = function( options, docFrag ) {
 			this.type = types.SECTION;
 			this.inverted = !! options.descriptor.n;
 			this.fragments = [];
 			this.length = 0;
+			// number of times this section is rendered
 			if ( docFrag ) {
 				this.docFrag = document.createDocumentFragment();
 			}
 			this.initialising = true;
-			initMustache( this, options );
+			Mustache.init( this, options );
 			if ( docFrag ) {
 				docFrag.appendChild( this.docFrag );
 			}
 			this.initialising = false;
 		};
 		DomSection.prototype = {
-			update: updateMustache,
-			resolve: resolveMustache,
+			update: Mustache.update,
+			resolve: Mustache.resolve,
+			reassign: Mustache.reassign,
 			splice: splice,
 			merge: merge,
 			detach: function() {
@@ -4349,9 +4658,9 @@
 			}
 		};
 		return DomSection;
-	}( config_types, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, render_DomFragment_Section_prototype_splice, shared_teardown, circular );
+	}( config_types, render_shared_Mustache__Mustache, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, render_DomFragment_Section_prototype_splice, shared_teardown, circular );
 
-	var render_DomFragment_Triple = function( types, matches, initMustache, updateMustache, resolveMustache, insertHtml, teardown ) {
+	var render_DomFragment_Triple = function( types, matches, Mustache, insertHtml, teardown ) {
 
 		var DomTriple = function( options, docFrag ) {
 			this.type = types.TRIPLE;
@@ -4360,15 +4669,16 @@
 				this.docFrag = document.createDocumentFragment();
 			}
 			this.initialising = true;
-			initMustache( this, options );
+			Mustache.init( this, options );
 			if ( docFrag ) {
 				docFrag.appendChild( this.docFrag );
 			}
 			this.initialising = false;
 		};
 		DomTriple.prototype = {
-			update: updateMustache,
-			resolve: resolveMustache,
+			update: Mustache.update,
+			resolve: Mustache.resolve,
+			reassign: Mustache.reassign,
 			detach: function() {
 				var len, i;
 				if ( this.docFrag ) {
@@ -4395,8 +4705,11 @@
 			render: function( html ) {
 				var node, pNode;
 				if ( !this.nodes ) {
+					// looks like we're in a server environment...
+					// nothing to see here, move along
 					return;
 				}
+				// remove existing nodes
 				while ( this.nodes.length ) {
 					node = this.nodes.pop();
 					node.parentNode.removeChild( node );
@@ -4405,11 +4718,13 @@
 					this.nodes = [];
 					return;
 				}
+				// get new nodes
 				pNode = this.parentFragment.pNode;
-				this.nodes = insertHtml( html, pNode.tagName, this.docFrag );
+				this.nodes = insertHtml( html, pNode.tagName, pNode.namespaceURI, this.docFrag );
 				if ( !this.initialising ) {
 					pNode.insertBefore( this.docFrag, this.parentFragment.findNextNode( this ) );
 				}
+				// Special case - we're inserting the contents of a <select>
 				if ( pNode.tagName === 'SELECT' && pNode._ractive && pNode._ractive.binding ) {
 					pNode._ractive.binding.update();
 				}
@@ -4455,14 +4770,16 @@
 			}
 		};
 		return DomTriple;
-	}( config_types, utils_matches, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache, render_DomFragment_shared_insertHtml, shared_teardown );
+	}( config_types, utils_matches, render_shared_Mustache__Mustache, render_DomFragment_shared_insertHtml, shared_teardown );
 
 	var render_DomFragment_Element_initialise_getElementNamespace = function( namespaces ) {
 
 		return function( descriptor, parentNode ) {
+			// if the element has an xmlns attribute, use that
 			if ( descriptor.a && descriptor.a.xmlns ) {
 				return descriptor.a.xmlns;
 			}
+			// otherwise, use the svg namespace if this is an svg element, or inherit namespace from parent
 			return descriptor.e === 'svg' ? namespaces.svg : parentNode.namespaceURI || namespaces.html;
 		};
 	}( config_namespaces );
@@ -4490,9 +4807,13 @@
 
 		return function( attribute, name ) {
 			var colonIndex, namespacePrefix;
+			// are we dealing with a namespaced attribute, e.g. xlink:href?
 			colonIndex = name.indexOf( ':' );
 			if ( colonIndex !== -1 ) {
+				// looks like we are, yes...
 				namespacePrefix = name.substr( 0, colonIndex );
+				// ...unless it's a namespace *declaration*, which we ignore (on the assumption
+				// that only valid namespaces will be used)
 				if ( namespacePrefix !== 'xmlns' ) {
 					name = name.substring( colonIndex + 1 );
 					attribute.name = enforceCase( name );
@@ -4504,6 +4825,7 @@
 					return;
 				}
 			}
+			// SVG attribute names are case sensitive
 			attribute.name = attribute.element.namespace !== namespaces.html ? enforceCase( name ) : name;
 			attribute.lcName = attribute.name.toLowerCase();
 		};
@@ -4517,6 +4839,7 @@
 				if ( attribute.namespace ) {
 					node.setAttributeNS( attribute.namespace, options.name, value );
 				} else {
+					// is it a style attribute? and are we in a broken POS browser?
 					if ( options.name === 'style' && node.style.setAttribute ) {
 						node.style.setAttribute( 'cssText', value );
 					} else if ( options.name === 'class' && ( !node.namespaceURI || node.namespaceURI === namespaces.html ) ) {
@@ -4538,6 +4861,8 @@
 
 	var render_DomFragment_Attribute_helpers_determinePropertyName = function( namespaces ) {
 
+		// the property name equivalents for element attributes, where they differ
+		// from the lowercased attribute name
 		var propertyNames = {
 			'accept-charset': 'acceptCharset',
 			accesskey: 'accessKey',
@@ -4566,6 +4891,8 @@
 				if ( options.pNode[ propertyName ] !== undefined ) {
 					attribute.propertyName = propertyName;
 				}
+				// is attribute a boolean attribute or 'value'? If so we're better off doing e.g.
+				// node.selected = true rather than node.setAttribute( 'selected', '' )
 				if ( typeof options.pNode[ propertyName ] === 'boolean' || propertyName === 'value' ) {
 					attribute.useProperty = true;
 				}
@@ -4626,6 +4953,22 @@
 				warn( expressionError + interpolator.keypath );
 				return false;
 			}
+			// Hmmm. Not sure if this is the best way to handle this ambiguity...
+			//
+			// Let's say we were given `value="{{bar}}"`. If the context stack was
+			// context stack was `["foo"]`, and `foo.bar` *wasn't* `undefined`, the
+			// keypath would be `foo.bar`. Then, any user input would result in
+			// `foo.bar` being updated.
+			//
+			// If, however, `foo.bar` *was* undefined, and so was `bar`, we would be
+			// left with an unresolved partial keypath - so we are forced to make an
+			// assumption. That assumption is that the input in question should
+			// be forced to resolve to `bar`, and any user input would affect `bar`
+			// and not `foo.bar`.
+			//
+			// Did that make any sense? No? Oh. Sorry. Well the moral of the story is
+			// be explicit when using two-way data-binding about what keypath you're
+			// updating. Using it in lists is probably a recipe for confusion...
 			if ( !interpolator.keypath ) {
 				interpolator.resolve( interpolator.descriptor.r );
 			}
@@ -4636,10 +4979,13 @@
 			}
 			node._ractive.binding = this.element.binding = binding;
 			this.twoway = true;
+			// register this with the root, so that we can force an update later
 			bindings = this.root._twowayBindings[ this.keypath ] || ( this.root._twowayBindings[ this.keypath ] = [] );
 			bindings.push( binding );
 			return true;
 		};
+		// This is the handler for DOM events that would lead to a change in the model
+		// (i.e. change, sometimes, input, and occasionally click and keyup)
 		updateModel = function() {
 			runloop.start( this._ractive.root );
 			this._ractive.binding.update();
@@ -4688,6 +5034,7 @@
 			node.addEventListener( 'change', updateModel, false );
 			valueFromModel = get( this.root, this.keypath );
 			if ( valueFromModel === undefined ) {
+				// get value from DOM, if possible
 				this.update();
 			}
 		};
@@ -4712,6 +5059,7 @@
 				previousValue = attribute.value;
 				value = this.value();
 				if ( previousValue === undefined || !arrayContentsMatch( value, previousValue ) ) {
+					// either length or contents have changed, so we update the model
 					runloop.addBinding( attribute );
 					attribute.value = value;
 					set( this.root, this.keypath, value );
@@ -4723,6 +5071,8 @@
 				if ( this.deferred === true ) {
 					return;
 				}
+				// TODO we're hijacking an existing bit of functionality here...
+				// the whole deferred updates thing could use a spring clean
 				runloop.addAttribute( this );
 				this.deferred = true;
 			},
@@ -4736,6 +5086,7 @@
 			node.addEventListener( 'change', updateModel, false );
 			valueFromModel = get( this.root, this.keypath );
 			if ( valueFromModel === undefined ) {
+				// get value from DOM, if possible
 				this.update();
 			}
 		};
@@ -4764,6 +5115,8 @@
 				if ( this.deferred === true ) {
 					return;
 				}
+				// TODO we're hijacking an existing bit of functionality here...
+				// the whole deferred updates thing could use a spring clean
 				runloop.addAttribute( this );
 				this.deferred = true;
 			},
@@ -4774,6 +5127,7 @@
 		RadioNameBinding = function( attribute, node ) {
 			var valueFromModel;
 			this.radioName = true;
+			// so that updateModel knows what to do with this
 			inheritProperties( this, attribute, node );
 			node.name = '{{' + attribute.keypath + '}}';
 			node.addEventListener( 'change', updateModel, false );
@@ -4807,13 +5161,16 @@
 		CheckboxNameBinding = function( attribute, node ) {
 			var valueFromModel, checked;
 			this.checkboxName = true;
+			// so that updateModel knows what to do with this
 			inheritProperties( this, attribute, node );
 			node.name = '{{' + this.keypath + '}}';
 			node.addEventListener( 'change', updateModel, false );
+			// in case of IE emergency, bind to click event as well
 			if ( node.attachEvent ) {
 				node.addEventListener( 'click', updateModel, false );
 			}
 			valueFromModel = get( this.root, this.keypath );
+			// if the model already specifies this value, check/uncheck accordingly
 			if ( valueFromModel !== undefined ) {
 				checked = valueFromModel.indexOf( node._ractive.value ) !== -1;
 				node.checked = checked;
@@ -4909,6 +5266,7 @@
 		GenericBinding.prototype = {
 			value: function() {
 				var value = this.attr.pNode.value;
+				// if the value is numeric, treat it as a number. otherwise don't
 				if ( +value + '' === value && value.indexOf( 'e' ) === -1 ) {
 					value = +value;
 				}
@@ -4940,21 +5298,30 @@
 	var render_DomFragment_Attribute_prototype_update = function( runloop, namespaces, isArray ) {
 
 		var updateAttribute, updateFileInputValue, deferSelect, initSelect, updateSelect, updateMultipleSelect, updateRadioName, updateCheckboxName, updateIEStyleAttribute, updateClassName, updateContentEditableValue, updateEverythingElse;
+		// There are a few special cases when it comes to updating attributes. For this reason,
+		// the prototype .update() method points to updateAttribute, which waits until the
+		// attribute has finished initialising, then replaces the prototype method with a more
+		// suitable one. That way, we save ourselves doing a bunch of tests on each call
 		updateAttribute = function() {
 			var node;
 			if ( !this.ready ) {
 				return this;
 			}
 			node = this.pNode;
+			// special case - selects
 			if ( node.tagName === 'SELECT' && this.lcName === 'value' ) {
 				this.update = deferSelect;
 				this.deferredUpdate = initSelect;
+				// we don't know yet if it's a select-one or select-multiple
 				return this.update();
 			}
+			// special case - <input type='file' value='{{fileList}}'>
 			if ( this.isFileInputValue ) {
 				this.update = updateFileInputValue;
+				// save ourselves the trouble next time
 				return this;
 			}
+			// special case - <input type='radio' name='{{twoway}}' value='foo'>
 			if ( this.twoway && this.lcName === 'name' ) {
 				if ( node.type === 'radio' ) {
 					this.update = updateRadioName;
@@ -4965,14 +5332,17 @@
 					return this.update();
 				}
 			}
+			// special case - style attributes in Internet Exploder
 			if ( this.lcName === 'style' && node.style.setAttribute ) {
 				this.update = updateIEStyleAttribute;
 				return this.update();
 			}
+			// special case - class names. IE fucks things up, again
 			if ( this.lcName === 'class' && ( !node.namespaceURI || node.namespaceURI === namespaces.html ) ) {
 				this.update = updateClassName;
 				return this.update();
 			}
+			// special case - contenteditable
 			if ( node.getAttribute( 'contenteditable' ) && this.lcName === 'value' ) {
 				this.update = updateContentEditableValue;
 				return this.update();
@@ -4984,10 +5354,14 @@
 			return this;
 		};
 		initSelect = function() {
+			// we're now in a position to decide whether this is a select-one or select-multiple
 			this.deferredUpdate = this.pNode.multiple ? updateMultipleSelect : updateSelect;
 			this.deferredUpdate();
 		};
 		deferSelect = function() {
+			// because select values depend partly on the values of their children, and their
+			// children may be entering and leaving the DOM, we wait until updates are
+			// complete before updating
 			runloop.addSelectValue( this );
 			return this;
 		};
@@ -5000,11 +5374,15 @@
 			while ( i-- ) {
 				option = options[ i ];
 				optionValue = option._ractive ? option._ractive.value : option.value;
+				// options inserted via a triple don't have _ractive
 				if ( optionValue == value ) {
+					// double equals as we may be comparing numbers with strings
 					option.selected = true;
 					return this;
 				}
 			}
+			// if we're still here, it means the new value didn't match any of the options...
+			// TODO figure out what to do in this situation
 			return this;
 		};
 		updateMultipleSelect = function() {
@@ -5018,6 +5396,7 @@
 			while ( i-- ) {
 				option = options[ i ];
 				optionValue = option._ractive ? option._ractive.value : option.value;
+				// options inserted via a triple don't have _ractive
 				option.selected = value.indexOf( optionValue ) !== -1;
 			}
 			this.value = value;
@@ -5083,9 +5462,10 @@
 			return this;
 		};
 		updateEverythingElse = function() {
-			var node, value;
+			var node, value, binding;
 			node = this.pNode;
 			value = this.fragment.getValue();
+			// store actual value, so it doesn't get coerced to a string
 			if ( this.isValueAttribute ) {
 				node._ractive.value = value;
 			}
@@ -5094,8 +5474,14 @@
 			}
 			if ( value !== this.value ) {
 				if ( this.useProperty ) {
+					// with two-way binding, only update if the change wasn't initiated by the user
+					// otherwise the cursor will often be sent to the wrong place
 					if ( !this.active ) {
 						node[ this.propertyName ] = value;
+					}
+					// special case - a selected option whose select element has two-way binding
+					if ( node.tagName === 'OPTION' && node.selected && ( binding = this.element.select.binding ) ) {
+						binding.update();
 					}
 					this.value = value;
 					return this;
@@ -5156,10 +5542,15 @@
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher = function( makeRegexMatcher ) {
 
 		var getStringMiddle, getEscapeSequence, getLineContinuation;
+		// Match one or more characters until: ", ', \, or EOL/EOF.
+		// EOL/EOF is written as (?!.) (meaning there's no non-newline char next).
 		getStringMiddle = makeRegexMatcher( /^(?=.)[^"'\\]+?(?:(?!.)|(?=["'\\]))/ );
+		// Match one escape sequence, including the backslash.
 		getEscapeSequence = makeRegexMatcher( /^\\(?:['"\\bfnrt]|0(?![0-9])|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|(?=.)[^ux0-9])/ );
+		// Match one ES5 line continuation (backslash + line terminator).
 		getLineContinuation = makeRegexMatcher( /^\\(?:\r\n|[\u000A\u000D\u2028\u2029])/ );
-		return function( quote, okQuote ) {
+		// Helper for defining getDoubleQuotedString and getSingleQuotedString.
+		return function( okQuote ) {
 			return function( tokenizer ) {
 				var start, literal, done, next;
 				start = tokenizer.pos;
@@ -5178,6 +5569,7 @@
 					} else {
 						next = getLineContinuation( tokenizer );
 						if ( next ) {
+							// convert \(newline-like) into a \u escape, which is allowed in JSON
 							literal += '\\u' + ( '000' + next.charCodeAt( 1 ).toString( 16 ) ).slice( -4 );
 						} else {
 							done = true;
@@ -5185,6 +5577,7 @@
 					}
 				}
 				literal += '"';
+				// use JSON.parse to interpret escapes
 				return JSON.parse( literal );
 			};
 		};
@@ -5192,12 +5585,12 @@
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getSingleQuotedString = function( makeQuotedStringMatcher ) {
 
-		return makeQuotedStringMatcher( '\'', '"' );
+		return makeQuotedStringMatcher( '"' );
 	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getDoubleQuotedString = function( makeQuotedStringMatcher ) {
 
-		return makeQuotedStringMatcher( '"', '\'' );
+		return makeQuotedStringMatcher( '\'' );
 	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral = function( types, getSingleQuotedString, getDoubleQuotedString ) {
@@ -5233,6 +5626,7 @@
 
 	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getNumberLiteral = function( types, makeRegexMatcher ) {
 
+		// bulletproof number regex from https://gist.github.com/Rich-Harris/7544330
 		var getNumber = makeRegexMatcher( /^(?:[+-]?)(?:(?:(?:0|[1-9]\d*)?\.\d+)|(?:(?:0|[1-9]\d*)\.)|(?:0|[1-9]\d*))(?:[eE][+-]?\d+)?/ );
 		return function( tokenizer ) {
 			var result;
@@ -5254,6 +5648,8 @@
 	var parse_Tokenizer_getExpression_shared_getKey = function( getStringLiteral, getNumberLiteral, getName ) {
 
 		var identifier = /^[a-zA-Z_$][a-zA-Z_$0-9]*$/;
+		// http://mathiasbynens.be/notes/javascript-properties
+		// can be any name, string literal, or number literal
 		return function( tokenizer ) {
 			var token;
 			if ( token = getStringLiteral( tokenizer ) ) {
@@ -5270,6 +5666,14 @@
 
 	var utils_parseJSON = function( getStringMatch, allowWhitespace, getStringLiteral, getKey ) {
 
+		// simple JSON parser, without the restrictions of JSON parse
+		// (i.e. having to double-quote keys).
+		//
+		// This re-uses logic from the main template parser, albeit
+		// messily. Could probably use a cleanup at some point.
+		//
+		// If passed a hash of values as the second argument, ${placeholders}
+		// will be replaced with those values
 		var Tokenizer, specials, specialsPattern, numberPattern, placeholderPattern, placeholderAtStartPattern;
 		specials = {
 			'true': true,
@@ -5414,15 +5818,16 @@
 		};
 	}( parse_Tokenizer_utils_getStringMatch, parse_Tokenizer_utils_allowWhitespace, parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral, parse_Tokenizer_getExpression_shared_getKey );
 
-	var render_StringFragment_Interpolator = function( types, teardown, initMustache, updateMustache, resolveMustache ) {
+	var render_StringFragment_Interpolator = function( types, teardown, Mustache ) {
 
 		var StringInterpolator = function( options ) {
 			this.type = types.INTERPOLATOR;
-			initMustache( this, options );
+			Mustache.init( this, options );
 		};
 		StringInterpolator.prototype = {
-			update: updateMustache,
-			resolve: resolveMustache,
+			update: Mustache.update,
+			resolve: Mustache.resolve,
+			reassign: Mustache.reassign,
 			render: function( value ) {
 				this.value = value;
 				this.parentFragment.bubble();
@@ -5445,9 +5850,9 @@
 			}
 			return JSON.stringify( value );
 		}
-	}( config_types, shared_teardown, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache );
+	}( config_types, shared_teardown, render_shared_Mustache__Mustache );
 
-	var render_StringFragment_Section = function( types, initMustache, updateMustache, resolveMustache, updateSection, teardown, circular ) {
+	var render_StringFragment_Section = function( types, Mustache, updateSection, teardown, circular ) {
 
 		var StringSection, StringFragment;
 		circular.push( function() {
@@ -5457,11 +5862,12 @@
 			this.type = types.SECTION;
 			this.fragments = [];
 			this.length = 0;
-			initMustache( this, options );
+			Mustache.init( this, options );
 		};
 		StringSection.prototype = {
-			update: updateMustache,
-			resolve: resolveMustache,
+			update: Mustache.update,
+			resolve: Mustache.resolve,
+			reassign: Mustache.reassign,
 			teardown: function() {
 				this.teardownFragments();
 				teardown( this );
@@ -5478,6 +5884,7 @@
 			},
 			render: function( value ) {
 				var wrapped;
+				// with sections, we need to get the fake value if we have a wrapped object
 				if ( wrapped = this.root._wrapped[ this.keypath ] ) {
 					value = wrapped.get();
 				}
@@ -5492,7 +5899,7 @@
 			}
 		};
 		return StringSection;
-	}( config_types, render_shared_initMustache, render_shared_updateMustache, render_shared_resolveMustache, render_shared_updateSection, shared_teardown, circular );
+	}( config_types, render_shared_Mustache__Mustache, render_shared_updateSection, shared_teardown, circular );
 
 	var render_StringFragment_Text = function( types ) {
 
@@ -5504,6 +5911,8 @@
 			toString: function() {
 				return this.text;
 			},
+			reassign: function() {},
+			//no-op
 			teardown: function() {}
 		};
 		return StringText;
@@ -5557,12 +5966,13 @@
 		};
 	}( utils_warn, utils_parseJSON );
 
-	var render_StringFragment__StringFragment = function( types, parseJSON, initFragment, Interpolator, Section, Text, toArgsList, circular ) {
+	var render_StringFragment__StringFragment = function( types, parseJSON, Fragment, Interpolator, Section, Text, toArgsList, circular ) {
 
 		var StringFragment = function( options ) {
-			initFragment( this, options );
+			Fragment.init( this, options );
 		};
 		StringFragment.prototype = {
+			reassign: Fragment.reassign,
 			createItem: function( options ) {
 				if ( typeof options.descriptor === 'string' ) {
 					return new Text( options.descriptor );
@@ -5591,6 +6001,7 @@
 			},
 			getValue: function() {
 				var value;
+				// Accommodate boolean attributes
 				if ( this.items.length === 1 && this.items[ 0 ].type === types.INTERPOLATOR ) {
 					value = this.items[ 0 ].value;
 					if ( value !== undefined ) {
@@ -5610,6 +6021,7 @@
 					if ( item.type === types.TEXT ) {
 						continue;
 					}
+					// we can only have one interpolator and still be self-updating
 					if ( item.type === types.INTERPOLATOR ) {
 						if ( containsInterpolator ) {
 							return false;
@@ -5618,6 +6030,8 @@
 							continue;
 						}
 					}
+					// anything that isn't text or an interpolator (i.e. a section)
+					// and we can't self-update
 					return this.simple = false;
 				}
 				return this.simple = true;
@@ -5638,7 +6052,7 @@
 		};
 		circular.StringFragment = StringFragment;
 		return StringFragment;
-	}( config_types, utils_parseJSON, render_shared_initFragment, render_StringFragment_Interpolator, render_StringFragment_Section, render_StringFragment_Text, render_StringFragment_prototype_toArgsList, circular );
+	}( config_types, utils_parseJSON, render_shared_Fragment__Fragment, render_StringFragment_Interpolator, render_StringFragment_Section, render_StringFragment_Text, render_StringFragment_prototype_toArgsList, circular );
 
 	var render_DomFragment_Attribute__Attribute = function( runloop, types, determineNameAndNamespace, setStaticAttribute, determinePropertyName, getInterpolator, bind, update, StringFragment ) {
 
@@ -5646,39 +6060,67 @@
 			this.type = types.ATTRIBUTE;
 			this.element = options.element;
 			determineNameAndNamespace( this, options.name );
+			// if it's an empty attribute, or just a straight key-value pair, with no
+			// mustache shenanigans, set the attribute accordingly and go home
 			if ( options.value === null || typeof options.value === 'string' ) {
 				setStaticAttribute( this, options );
 				return;
 			}
+			// otherwise we need to do some work
 			this.root = options.root;
 			this.pNode = options.pNode;
+			// share parentFragment with parent element
 			this.parentFragment = this.element.parentFragment;
 			this.fragment = new StringFragment( {
 				descriptor: options.value,
 				root: this.root,
 				owner: this
 			} );
+			// Store a reference to this attribute's interpolator, if its fragment
+			// takes the form `{{foo}}`. This is necessary for two-way binding and
+			// for correctly rendering HTML later
 			this.interpolator = getInterpolator( this );
+			// if we're not rendering (i.e. we're just stringifying), we can stop here
 			if ( !this.pNode ) {
 				return;
 			}
+			// special cases
 			if ( this.name === 'value' ) {
 				this.isValueAttribute = true;
+				// TODO need to wait until afterwards to determine type, in case we
+				// haven't initialised that attribute yet
+				// <input type='file' value='{{value}}'>
 				if ( this.pNode.tagName === 'INPUT' && this.pNode.type === 'file' ) {
 					this.isFileInputValue = true;
 				}
 			}
+			// can we establish this attribute's property name equivalent?
 			determinePropertyName( this, options );
+			// determine whether this attribute can be marked as self-updating
 			this.selfUpdating = this.fragment.isSimple();
+			// mark as ready
 			this.ready = true;
 		};
 		DomAttribute.prototype = {
 			bind: bind,
 			update: update,
 			updateBindings: function() {
+				// if the fragment this attribute belongs to gets reassigned (as a result of
+				// as section being updated via an array shift, unshift or splice), this
+				// attribute needs to recognise that its keypath has changed
 				this.keypath = this.interpolator.keypath || this.interpolator.ref;
+				// if we encounter the special case described above, update the name attribute
 				if ( this.propertyName === 'name' ) {
+					// replace actual name attribute
 					this.pNode.name = '{{' + this.keypath + '}}';
+				}
+			},
+			reassign: function( indexRef, newIndex, oldKeypath, newKeypath ) {
+				if ( this.fragment ) {
+					this.fragment.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+					if ( this.twoway ) {
+						this.updateBindings();
+					}
 				}
 			},
 			teardown: function() {
@@ -5689,11 +6131,14 @@
 						this.pNode.removeEventListener( this.boundEvents[ i ], this.updateModel, false );
 					}
 				}
+				// ignore non-dynamic attributes
 				if ( this.fragment ) {
 					this.fragment.teardown();
 				}
 			},
 			bubble: function() {
+				// If an attribute's text fragment contains a single item, we can
+				// update the DOM immediately...
 				if ( this.selfUpdating ) {
 					this.update();
 				} else if ( !this.deferred && this.ready ) {
@@ -5706,15 +6151,19 @@
 				if ( this.value === null ) {
 					return this.name;
 				}
+				// Special case - select values (should not be stringified)
 				if ( this.name === 'value' && this.element.lcName === 'select' ) {
 					return;
 				}
+				// Special case - radio names
 				if ( this.name === 'name' && this.element.lcName === 'input' && ( interpolator = this.interpolator ) ) {
 					return 'name={{' + ( interpolator.keypath || interpolator.ref ) + '}}';
 				}
+				// TODO don't use JSON.stringify?
 				if ( !this.fragment ) {
 					return this.name + '=' + JSON.stringify( this.value );
 				}
+				// TODO deal with boolean attributes correctly
 				str = this.fragment.toString();
 				return this.name + '=' + JSON.stringify( str );
 			}
@@ -5732,7 +6181,13 @@
 				root: element.root,
 				pNode: element.node
 			} );
+			// store against both index and name, for fast iteration and lookup
 			element.attributes.push( element.attributes[ name ] = attr );
+			// The name attribute is a special case - it is the only two-way attribute that updates
+			// the viewmodel based on the value of another attribute. For that reason it must wait
+			// until the node has been initialised, and the viewmodel has had its first two-way
+			// update, before updating itself (otherwise it may disable a checkbox or radio that
+			// was enabled in the template)
 			if ( name !== 'name' ) {
 				attr.update();
 			}
@@ -5794,6 +6249,7 @@
 			this.node.text = this.fragment.toString();
 		};
 		return function appendElementChildren( element, node, descriptor, docFrag ) {
+			// Special case - script and style tags
 			if ( element.lcName === 'script' || element.lcName === 'style' ) {
 				element.fragment = new StringFragment( {
 					descriptor: descriptor.f,
@@ -5812,10 +6268,13 @@
 				return;
 			}
 			if ( typeof descriptor.f === 'string' && ( !node || ( !node.namespaceURI || node.namespaceURI === namespaces.html ) ) ) {
+				// great! we can use innerHTML
 				element.html = descriptor.f;
 				if ( docFrag ) {
 					node.innerHTML = element.html;
+					// Update live queries, if applicable
 					element.matchingStaticNodes = {};
+					// so we can remove matches made with querySelectorAll at teardown time
 					updateLiveQueries( element );
 				}
 			} else {
@@ -5905,6 +6364,7 @@
 				if ( !result || !result.teardown ) {
 					throw new Error( 'Decorator definition must return an object with a teardown method' );
 				}
+				// TODO does this make sense?
 				this.actual = result;
 				this.ready = true;
 			},
@@ -5939,7 +6399,9 @@
 
 	var render_DomFragment_Element_initialise_addEventProxies_addEventProxy = function( warn, StringFragment ) {
 
-		var addEventProxy, MasterEventHandler, ProxyEvent, firePlainEvent, fireEventWithArgs, fireEventWithDynamicArgs, customHandlers, genericHandler, getCustomHandler;
+		var addEventProxy,
+			// helpers
+			MasterEventHandler, ProxyEvent, firePlainEvent, fireEventWithArgs, fireEventWithDynamicArgs, customHandlers, genericHandler, getCustomHandler;
 		addEventProxy = function( element, triggerEventName, proxyDescriptor, indexRefs ) {
 			var events, master;
 			events = element.node._ractive.events;
@@ -5956,6 +6418,7 @@
 			if ( definition = this.root.events[ eventName ] ) {
 				this.custom = definition( this.node, getCustomHandler( eventName ) );
 			} else {
+				// Looks like we're dealing with a standard DOM event... but let's check
 				if ( !( 'on' + eventName in this.node ) ) {
 					warn( 'Missing "' + this.name + '" event. You may need to download a plugin via http://docs.ractivejs.org/latest/plugins#events' );
 				}
@@ -5966,6 +6429,7 @@
 			add: function( proxy ) {
 				this.proxies.push( new ProxyEvent( this.element, this.root, proxy ) );
 			},
+			// TODO teardown when element torn down
 			teardown: function() {
 				var i;
 				if ( this.custom ) {
@@ -6025,6 +6489,7 @@
 			},
 			bubble: function() {}
 		};
+		// the ProxyEvent instance fire method could be any of these
 		firePlainEvent = function( event ) {
 			this.root.fire( this.n.toString(), event );
 		};
@@ -6036,6 +6501,7 @@
 		};
 		fireEventWithDynamicArgs = function( event ) {
 			var args = this.d.toArgsList();
+			// need to strip [] from ends if a string!
 			if ( typeof args === 'string' ) {
 				args = args.substr( 1, args.length - 2 );
 			}
@@ -6044,6 +6510,7 @@
 				event
 			].concat( args ) );
 		};
+		// all native DOM events dealt with by Ractive share a single handler
 		genericHandler = function( event ) {
 			var storage = this._ractive;
 			storage.events[ event.type ].fire( {
@@ -6088,6 +6555,7 @@
 
 	var render_DomFragment_Element_initialise_updateLiveQueries = function( element ) {
 		var instance, liveQueries, i, selector, query;
+		// Does this need to be added to any live queries?
 		instance = element.root;
 		do {
 			liveQueries = instance._liveQueries;
@@ -6096,6 +6564,7 @@
 				selector = liveQueries[ i ];
 				query = liveQueries[ selector ];
 				if ( query._test( element ) ) {
+					// keep register of applicable selectors, for when we teardown
 					( element.liveQueries || ( element.liveQueries = [] ) ).push( query );
 				}
 			}
@@ -6124,6 +6593,7 @@
 				if ( testStyle[ prop ] !== undefined ) {
 					prefixCache[ prop ] = prop;
 				} else {
+					// test vendors...
 					capped = prop.charAt( 0 ).toUpperCase() + prop.substring( 1 );
 					i = vendors.length;
 					while ( i-- ) {
@@ -6198,11 +6668,14 @@
 
 	var shared_Ticker = function( warn, getTime, animations ) {
 
+		// TODO what happens if a transition is aborted?
+		// TODO use this with Animation to dedupe some code?
 		var Ticker = function( options ) {
 			var easing;
 			this.duration = options.duration;
 			this.step = options.step;
 			this.complete = options.complete;
+			// easing
 			if ( typeof options.easing === 'string' ) {
 				easing = options.root.easing[ options.easing ];
 				if ( !easing ) {
@@ -6289,6 +6762,7 @@
 			return;
 		}
 		testStyle = createElement( 'div' ).style;
+		// determine some facts about our environment
 		( function() {
 			if ( testStyle.transition !== undefined ) {
 				TRANSITION = 'transition';
@@ -6308,6 +6782,8 @@
 			TRANSITION_TIMING_FUNCTION = TRANSITION + 'TimingFunction';
 		}
 		return function( t, to, options, changedProperties, transitionEndHandler, resolve ) {
+			// Wait a beat (otherwise the target styles will be applied immediately)
+			// TODO use a fastdom-style mechanism?
 			setTimeout( function() {
 				var hashPrefix, jsTransitionsComplete, cssTransitionsComplete, checkComplete;
 				checkComplete = function() {
@@ -6315,6 +6791,8 @@
 						resolve();
 					}
 				};
+				// this is used to keep track of which elements can use CSS to animate
+				// which properties
 				hashPrefix = t.node.namespaceURI + t.node.tagName;
 				t.node.style[ TRANSITION_PROPERTY ] = changedProperties.map( prefix ).map( hyphenate ).join( ',' );
 				t.node.style[ TRANSITION_TIMING_FUNCTION ] = hyphenate( options.easing || 'linear' );
@@ -6326,6 +6804,7 @@
 						changedProperties.splice( index, 1 );
 					}
 					if ( changedProperties.length ) {
+						// still transitioning...
 						return;
 					}
 					t.root.fire( t.name + ':end' );
@@ -6342,29 +6821,43 @@
 						prop = changedProperties[ i ];
 						hash = hashPrefix + prop;
 						if ( canUseCssTransitions[ hash ] ) {
+							// We can definitely use CSS transitions, because
+							// we've already tried it and it worked
 							t.node.style[ prefix( prop ) ] = to[ prop ];
 						} else {
+							// one way or another, we'll need this
 							originalValue = t.getStyle( prop );
 						}
 						if ( canUseCssTransitions[ hash ] === undefined ) {
+							// We're not yet sure if we can use CSS transitions -
+							// let's find out
 							t.node.style[ prefix( prop ) ] = to[ prop ];
+							// if this property is transitionable in this browser,
+							// the current style will be different from the target style
 							canUseCssTransitions[ hash ] = t.getStyle( prop ) != to[ prop ];
 							cannotUseCssTransitions[ hash ] = !canUseCssTransitions[ hash ];
 						}
 						if ( cannotUseCssTransitions[ hash ] ) {
+							// we need to fall back to timer-based stuff
+							// need to remove this from changedProperties, otherwise transitionEndHandler
+							// will get confused
 							index = changedProperties.indexOf( prop );
 							if ( index === -1 ) {
 								warn( 'Something very strange happened with transitions. If you see this message, please let @RactiveJS know. Thanks!' );
 							} else {
 								changedProperties.splice( index, 1 );
 							}
+							// TODO Determine whether this property is animatable at all
+							// for now assume it is. First, we need to set the value to what it was...
 							t.node.style[ prefix( prop ) ] = originalValue;
+							// ...then kick off a timer-based transition
 							propertiesToTransitionInJs.push( {
 								name: prefix( prop ),
 								interpolator: interpolate( originalValue, to[ prop ] )
 							} );
 						}
 					}
+					// javascript transitions
 					if ( propertiesToTransitionInJs.length ) {
 						new Ticker( {
 							root: t.root,
@@ -6387,6 +6880,8 @@
 						jsTransitionsComplete = true;
 					}
 					if ( !changedProperties.length ) {
+						// We need to cancel the transitionEndHandler, and deal with
+						// the fact that it will never fire
 						t.node.removeEventListener( TRANSITIONEND, transitionEndHandler, false );
 						cssTransitionsComplete = true;
 						checkComplete();
@@ -6411,9 +6906,14 @@
 				to[ style ] = value;
 			} else {
 				to = style;
+				// shuffle arguments
 				complete = options;
 				options = value;
 			}
+			// As of 0.3.9, transition authors should supply an `option` object with
+			// `duration` and `easing` properties (and optional `delay`), plus a
+			// callback function that gets called after the animation completes
+			// TODO remove this check in a future version
 			if ( !options ) {
 				warn( 'The "' + t.name + '" transition does not supply an options object to `t.animateStyle()`. This will break in a future version of Ractive. For more info see https://github.com/RactiveJS/Ractive/issues/340' );
 				options = t;
@@ -6421,13 +6921,16 @@
 			}
 			var promise = new Promise( function( resolve ) {
 				var propertyNames, changedProperties, computedStyle, current, from, transitionEndHandler, i, prop;
+				// Edge case - if duration is zero, set style synchronously and complete
 				if ( !options.duration ) {
 					t.setStyle( to );
 					resolve();
 					return;
 				}
+				// Get a list of the properties we're animating
 				propertyNames = Object.keys( to );
 				changedProperties = [];
+				// Store the current styles
 				computedStyle = window.getComputedStyle( t.node );
 				from = {};
 				i = propertyNames.length;
@@ -6437,17 +6940,25 @@
 					if ( current === '0px' ) {
 						current = 0;
 					}
+					// we need to know if we're actually changing anything
 					if ( current != to[ prop ] ) {
+						// use != instead of !==, so we can compare strings with numbers
 						changedProperties.push( prop );
+						// make the computed style explicit, so we can animate where
+						// e.g. height='auto'
 						t.node.style[ prefix( prop ) ] = current;
 					}
 				}
+				// If we're not actually changing anything, the transitionend event
+				// will never fire! So we complete early
 				if ( !changedProperties.length ) {
 					resolve();
 					return;
 				}
 				createTransitions( t, to, options, changedProperties, transitionEndHandler, resolve );
 			} );
+			// If a callback was supplied, do the honours
+			// TODO remove this check in future
 			if ( complete ) {
 				warn( 't.animateStyle returns a Promise as of 0.4.0. Transition authors should do t.animateStyle(...).then(callback)' );
 				promise.then( complete );
@@ -6498,6 +7009,8 @@
 		if ( this.originalStyle ) {
 			this.node.setAttribute( 'style', this.originalStyle );
 		} else {
+			// Next line is necessary, to remove empty style attribute!
+			// See http://stackoverflow.com/a/7167553
 			this.node.getAttribute( 'style' );
 			this.node.removeAttribute( 'style' );
 		}
@@ -6512,7 +7025,11 @@
 			this.root = root;
 			this.node = owner.node;
 			this.isIntro = isIntro;
+			// store original style attribute
 			this.originalStyle = this.node.getAttribute( 'style' );
+			// create t.complete() - we don't want this on the prototype,
+			// because we don't want `this` silliness when passing it as
+			// an argument
 			t.complete = function( noReset ) {
 				if ( !noReset && t.isIntro ) {
 					t.resetStyle();
@@ -6534,6 +7051,8 @@
 			if ( descriptor.a ) {
 				this.params = descriptor.a;
 			} else if ( descriptor.d ) {
+				// TODO is there a way to interpret dynamic arguments without all the
+				// 'dependency thrashing'?
 				fragment = new StringFragment( {
 					descriptor: descriptor.d,
 					root: this.root,
@@ -6568,12 +7087,16 @@
 
 		return function( descriptor, ractive, owner, isIntro ) {
 			var transition, node, oldTransition;
+			// TODO this can't be right!
 			if ( !ractive.transitionsEnabled || ractive._parent && !ractive._parent.transitionsEnabled ) {
 				return;
 			}
+			// get transition name, args and function
 			transition = new Transition( descriptor, ractive, owner, isIntro );
 			if ( transition._fn ) {
 				node = transition.node;
+				// Existing transition (i.e. we're outroing before intro is complete)?
+				// End it prematurely
 				if ( oldTransition = node._ractive.transition ) {
 					oldTransition.complete();
 				}
@@ -6588,6 +7111,7 @@
 		return function initialiseElement( element, options, docFrag ) {
 			var parentFragment, pNode, descriptor, namespace, name, attributes, width, height, loadHandler, root, selectBinding, errorMessage;
 			element.type = types.ELEMENT;
+			// stuff we'll need later
 			parentFragment = element.parentFragment = options.parentFragment;
 			pNode = parentFragment.pNode;
 			descriptor = element.descriptor = options.descriptor;
@@ -6598,13 +7122,20 @@
 			element.eventListeners = [];
 			element.customEventListeners = [];
 			element.cssDetachQueue = [];
+			// get namespace, if we're actually rendering (not server-side stringifying)
 			if ( pNode ) {
 				namespace = element.namespace = getElementNamespace( descriptor, pNode );
+				// non-HTML elements (i.e. SVG) are case-sensitive
 				name = namespace !== namespaces.html ? enforceCase( descriptor.e ) : descriptor.e;
+				// create the DOM node
 				element.node = createElement( name, namespace );
+				// Is this a top-level node of a component? If so, we may need to add
+				// a data-rvcguid attribute, for CSS encapsulation
 				if ( root.css && pNode === root.el ) {
 					element.node.setAttribute( 'data-rvcguid', root.constructor._guid || root._guid );
 				}
+				// Add _ractive property to the node - we use this object to store stuff
+				// related to proxy events, two-way bindings etc
 				defineProperty( element.node, '_ractive', {
 					value: {
 						proxy: element,
@@ -6615,10 +7146,15 @@
 					}
 				} );
 			}
+			// set attributes
 			attributes = createElementAttributes( element, descriptor.a );
+			// append children, if there are any
 			if ( descriptor.f ) {
+				// Special case - contenteditable
 				if ( element.node && element.node.getAttribute( 'contenteditable' ) ) {
 					if ( element.node.innerHTML ) {
+						// This is illegal. You can't have content inside a contenteditable
+						// element that's already populated
 						errorMessage = 'A pre-populated contenteditable element should not have children';
 						if ( root.debug ) {
 							throw new Error( errorMessage );
@@ -6629,19 +7165,29 @@
 				}
 				appendElementChildren( element, element.node, descriptor, docFrag );
 			}
+			// create event proxies
 			if ( docFrag && descriptor.v ) {
 				addEventProxies( element, descriptor.v );
 			}
+			// if we're actually rendering (i.e. not server-side stringifying), proceed
 			if ( docFrag ) {
+				// deal with two-way bindings
 				if ( root.twoway ) {
 					element.bind();
+					// Special case - contenteditable
 					if ( element.node.getAttribute( 'contenteditable' ) && element.node._ractive.binding ) {
+						// We need to update the model
 						element.node._ractive.binding.update();
 					}
 				}
+				// name attributes are deferred, because they're a special case - if two-way
+				// binding is involved they need to update later. But if it turns out they're
+				// not two-way we can update them now
 				if ( attributes.name && !attributes.name.twoway ) {
 					attributes.name.update();
 				}
+				// if this is an <img>, and we're in a crap browser, we may need to prevent it
+				// from overriding width and height when it loads the src
 				if ( element.node.tagName === 'IMG' && ( ( width = element.attributes.width ) || ( height = element.attributes.height ) ) ) {
 					element.node.addEventListener( 'load', loadHandler = function() {
 						if ( width ) {
@@ -6654,27 +7200,42 @@
 					}, false );
 				}
 				docFrag.appendChild( element.node );
+				// apply decorator(s)
 				if ( descriptor.o ) {
 					decorate( descriptor.o, root, element );
 				}
+				// trigger intro transition
 				if ( descriptor.t1 ) {
 					executeTransition( descriptor.t1, root, element, true );
 				}
 				if ( element.node.tagName === 'OPTION' ) {
+					// Special case... if this option's parent select was previously
+					// empty, it's possible that it should initialise to the value of
+					// this option.
 					if ( pNode.tagName === 'SELECT' && ( selectBinding = pNode._ractive.binding ) ) {
+						// it should be!
 						selectBinding.deferUpdate();
 					}
+					// If a value attribute was not given, we need to create one based on
+					// the content of the node, so that `<option>foo</option>` behaves the
+					// same as `<option value='foo'>foo</option>` with two-way binding
 					if ( !attributes.value ) {
 						createElementAttribute( element, 'value', descriptor.f );
 					}
+					// Special case... a select may have had its value set before a matching
+					// option was rendered. This might be that option element
 					if ( element.node._ractive.value == pNode._ractive.value ) {
 						element.node.selected = true;
 					}
 				}
 				if ( element.node.autofocus ) {
+					// Special case. Some browsers (*cough* Firefix *cough*) have a problem
+					// with dynamically-generated elements having autofocus, and they won't
+					// allow you to programmatically focus the element until it's in the DOM
 					runloop.focus( element.node );
 				}
 			}
+			// If this is an option element, we need to store a reference to its select
 			if ( element.lcName === 'option' ) {
 				element.select = findParentSelect( element.parent );
 			}
@@ -6694,10 +7255,13 @@
 
 		return function Element_prototype_teardown( destroy ) {
 			var eventName, binding, bindings;
+			// Detach as soon as we can
 			if ( destroy ) {
 				this.willDetach = true;
 				runloop.detachWhenReady( this );
 			}
+			// Children first. that way, any transitions on child elements will be
+			// handled by the current transitionManager
 			if ( this.fragment ) {
 				this.fragment.teardown( false );
 			}
@@ -6708,6 +7272,7 @@
 				for ( eventName in this.node._ractive.events ) {
 					this.node._ractive.events[ eventName ].teardown();
 				}
+				// tear down two-way binding, if such there be
 				if ( binding = this.node._ractive.binding ) {
 					binding.teardown();
 					bindings = this.root._twowayBindings[ binding.attr.keypath ];
@@ -6717,9 +7282,11 @@
 			if ( this.decorator ) {
 				this.decorator.teardown();
 			}
+			// Outro, if necessary
 			if ( this.descriptor.t2 ) {
 				executeTransition( this.descriptor.t2, this.root, this, false );
 			}
+			// Remove this node from any live queries
 			if ( this.liveQueries ) {
 				removeFromLiveQueries( this );
 			}
@@ -6742,6 +7309,61 @@
 		}
 	}( global_runloop, render_DomFragment_Element_shared_executeTransition__executeTransition );
 
+	var render_DomFragment_Element_prototype_reassign = function( assignNewKeypath ) {
+
+		return function reassignElement( indexRef, newIndex, oldKeypath, newKeypath ) {
+			var i, storage, masterEventName, proxies, proxy, binding, bindings, liveQueries, ractive;
+			i = this.attributes.length;
+			while ( i-- ) {
+				this.attributes[ i ].reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			}
+			if ( storage = this.node._ractive ) {
+				//adjust keypath if needed
+				assignNewKeypath( storage, 'keypath', oldKeypath, newKeypath );
+				if ( indexRef != undefined ) {
+					storage.index[ indexRef ] = newIndex;
+				}
+				for ( masterEventName in storage.events ) {
+					proxies = storage.events[ masterEventName ].proxies;
+					i = proxies.length;
+					while ( i-- ) {
+						proxy = proxies[ i ];
+						if ( typeof proxy.n === 'object' ) {
+							proxy.a.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+						}
+						if ( proxy.d ) {
+							proxy.d.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+						}
+					}
+				}
+				if ( binding = storage.binding ) {
+					if ( binding.keypath.substr( 0, oldKeypath.length ) === oldKeypath ) {
+						bindings = storage.root._twowayBindings[ binding.keypath ];
+						// remove binding reference for old keypath
+						bindings.splice( bindings.indexOf( binding ), 1 );
+						// update keypath
+						binding.keypath = binding.keypath.replace( oldKeypath, newKeypath );
+						// add binding reference for new keypath
+						bindings = storage.root._twowayBindings[ binding.keypath ] || ( storage.root._twowayBindings[ binding.keypath ] = [] );
+						bindings.push( binding );
+					}
+				}
+			}
+			// reassign children
+			if ( this.fragment ) {
+				this.fragment.reassign( indexRef, newIndex, oldKeypath, newKeypath );
+			}
+			// Update live queries, if necessary
+			if ( liveQueries = this.liveQueries ) {
+				ractive = this.root;
+				i = liveQueries.length;
+				while ( i-- ) {
+					liveQueries[ i ]._makeDirty();
+				}
+			}
+		};
+	}( render_shared_utils_assignNewKeypath );
+
 	var config_voidElementNames = 'area base br col command doctype embed hr img input keygen link meta param source track wbr'.split( ' ' );
 
 	var render_DomFragment_Element_prototype_toString = function( voidElementNames, isArray ) {
@@ -6755,9 +7377,11 @@
 					str += ' ' + attrStr;
 				}
 			}
+			// Special case - selected options
 			if ( this.lcName === 'option' && optionIsSelected( this ) ) {
 				str += ' selected';
 			}
+			// Special case - two-way radio name bindings
 			if ( this.lcName === 'input' && inputIsCheckedRadio( this ) ) {
 				str += ' checked';
 			}
@@ -6767,6 +7391,7 @@
 			} else if ( this.fragment ) {
 				str += this.fragment.toString();
 			}
+			// add a closing tag if this isn't a void element
 			if ( voidElementNames.indexOf( this.descriptor.e ) === -1 ) {
 				str += '</' + this.descriptor.e + '>';
 			}
@@ -6831,6 +7456,8 @@
 
 		return function( selector, query ) {
 			var matchingStaticNodes, matchedSelf;
+			// Add this node to the query, if applicable, and register the
+			// query on this element
 			if ( query._test( this, true ) && query.live ) {
 				( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
 			}
@@ -6862,15 +7489,20 @@
 	var render_DomFragment_Element_prototype_bind = function() {
 		var attributes = this.attributes;
 		if ( !this.node ) {
+			// we're not in a browser!
 			return;
 		}
+		// if this is a late binding, and there's already one, it
+		// needs to be torn down
 		if ( this.binding ) {
 			this.binding.teardown();
 			this.binding = null;
 		}
+		// contenteditable
 		if ( this.node.getAttribute( 'contenteditable' ) && attributes.value && attributes.value.bind() ) {
 			return;
 		}
+		// an element can only have one two-way attribute
 		switch ( this.descriptor.e ) {
 			case 'select':
 			case 'textarea':
@@ -6880,6 +7512,7 @@
 				return;
 			case 'input':
 				if ( this.node.type === 'radio' || this.node.type === 'checkbox' ) {
+					// we can either bind the name attribute, or the checked attribute - not both
 					if ( attributes.name && attributes.name.bind() ) {
 						return;
 					}
@@ -6893,7 +7526,7 @@
 		}
 	};
 
-	var render_DomFragment_Element__Element = function( runloop, css, initialise, teardown, toString, find, findAll, findComponent, findAllComponents, bind ) {
+	var render_DomFragment_Element__Element = function( runloop, css, initialise, teardown, reassign, toString, find, findAll, findComponent, findAllComponents, bind ) {
 
 		var DomElement = function( options, docFrag ) {
 			initialise( this, options, docFrag );
@@ -6902,11 +7535,16 @@
 			detach: function() {
 				var Component;
 				if ( this.node ) {
+					// need to check for parent node - DOM may have been altered
+					// by something other than Ractive! e.g. jQuery UI...
 					if ( this.node.parentNode ) {
 						this.node.parentNode.removeChild( this.node );
 					}
 					return this.node;
 				}
+				// If this element has child components with their own CSS, that CSS needs to
+				// be removed now
+				// TODO optimise this
 				if ( this.cssDetachQueue.length ) {
 					runloop.start();
 					while ( Component === this.cssDetachQueue.pop() ) {
@@ -6916,13 +7554,16 @@
 				}
 			},
 			teardown: teardown,
+			reassign: reassign,
 			firstNode: function() {
 				return this.node;
 			},
 			findNextNode: function() {
 				return null;
 			},
+			// TODO can we get rid of this?
 			bubble: function() {},
+			// just so event proxy and transition fragments have something to call!
 			toString: toString,
 			find: find,
 			findAll: findAll,
@@ -6931,7 +7572,7 @@
 			bind: bind
 		};
 		return DomElement;
-	}( global_runloop, global_css, render_DomFragment_Element_initialise__initialise, render_DomFragment_Element_prototype_teardown, render_DomFragment_Element_prototype_toString, render_DomFragment_Element_prototype_find, render_DomFragment_Element_prototype_findAll, render_DomFragment_Element_prototype_findComponent, render_DomFragment_Element_prototype_findAllComponents, render_DomFragment_Element_prototype_bind );
+	}( global_runloop, global_css, render_DomFragment_Element_initialise__initialise, render_DomFragment_Element_prototype_teardown, render_DomFragment_Element_prototype_reassign, render_DomFragment_Element_prototype_toString, render_DomFragment_Element_prototype_find, render_DomFragment_Element_prototype_findAll, render_DomFragment_Element_prototype_findComponent, render_DomFragment_Element_prototype_findAllComponents, render_DomFragment_Element_prototype_bind );
 
 	var config_errors = {
 		missingParser: 'Missing Ractive.parse - cannot parse template. Either preparse or use the version that includes the parser'
@@ -6948,6 +7589,7 @@
 		return function( str ) {
 			var lines, firstLine, lastLine, minIndent;
 			lines = str.split( '\n' );
+			// remove first and last line, if they only contain whitespace
 			firstLine = lines[ 0 ];
 			if ( firstLine !== undefined && empty.test( firstLine ) ) {
 				lines.shift();
@@ -6979,9 +7621,11 @@
 		var getPartialDescriptor, registerPartial, getPartialFromRegistry, unpack;
 		getPartialDescriptor = function( root, name ) {
 			var el, partial, errorMessage;
+			// If the partial was specified on this instance, great
 			if ( partial = getPartialFromRegistry( root, name ) ) {
 				return partial;
 			}
+			// Does it exist on the page as a script tag?
 			if ( isClient ) {
 				el = document.getElementById( name );
 				if ( el && el.tagName === 'SCRIPT' ) {
@@ -6992,6 +7636,7 @@
 				}
 			}
 			partial = partials[ name ];
+			// No match? Return an empty array
 			if ( !partial ) {
 				errorMessage = 'Could not find descriptor for partial "' + name + '"';
 				if ( root.debug ) {
@@ -7006,6 +7651,8 @@
 		getPartialFromRegistry = function( ractive, name ) {
 			var partial;
 			if ( ractive.partials[ name ] ) {
+				// If this was added manually to the registry, but hasn't been parsed,
+				// parse it now
 				if ( typeof ractive.partials[ name ] === 'string' ) {
 					if ( !parse ) {
 						throw new Error( errors.missingParser );
@@ -7030,6 +7677,7 @@
 			}
 		};
 		unpack = function( partial ) {
+			// Unpack string, if necessary
 			if ( partial.length === 1 && typeof partial[ 0 ] === 'string' ) {
 				return partial[ 0 ];
 			}
@@ -7062,6 +7710,7 @@
 			this.name = options.descriptor.r;
 			this.index = options.index;
 			if ( !options.descriptor.r ) {
+				// TODO support dynamic partial switching
 				throw new Error( 'Partials must have a static reference (no expressions). This may change in a future version of Ractive.' );
 			}
 			descriptor = getPartialDescriptor( parentFragment.root, options.descriptor.r );
@@ -7084,6 +7733,9 @@
 			},
 			detach: function() {
 				return this.fragment.detach();
+			},
+			reassign: function( indexRef, newIndex, oldKeypath, newKeypath ) {
+				return this.fragment.reassign( indexRef, newIndex, oldKeypath, newKeypath );
 			},
 			teardown: function( destroy ) {
 				this.fragment.teardown( destroy );
@@ -7133,6 +7785,7 @@
 		};
 		ComponentParameter.prototype = {
 			bubble: function() {
+				// If there's a single item, we can update the component immediately...
 				if ( this.selfUpdating ) {
 					this.update();
 				} else if ( !this.deferred && this.ready ) {
@@ -7157,6 +7810,9 @@
 		return function( component, defaultData, attributes, toBind ) {
 			var data, key, value;
 			data = {};
+			// some parameters, e.g. foo="The value is {{bar}}", are 'complex' - in
+			// other words, we need to construct a string fragment to watch
+			// when they change. We store these so they can be torn down later
 			component.complexParameters = [];
 			for ( key in attributes ) {
 				if ( attributes.hasOwnProperty( key ) ) {
@@ -7173,25 +7829,35 @@
 			var parameter, parsed, parentInstance, parentFragment, keypath, indexRef;
 			parentInstance = component.root;
 			parentFragment = component.parentFragment;
+			// If this is a static value, great
 			if ( typeof descriptor === 'string' ) {
 				parsed = parseJSON( descriptor );
 				return parsed ? parsed.value : descriptor;
 			}
+			// If null, we treat it as a boolean attribute (i.e. true)
 			if ( descriptor === null ) {
 				return true;
 			}
+			// If a regular interpolator, we bind to it
 			if ( descriptor.length === 1 && descriptor[ 0 ].t === types.INTERPOLATOR && descriptor[ 0 ].r ) {
+				// Is it an index reference?
 				if ( parentFragment.indexRefs && parentFragment.indexRefs[ indexRef = descriptor[ 0 ].r ] !== undefined ) {
 					component.indexRefBindings[ indexRef ] = key;
 					return parentFragment.indexRefs[ indexRef ];
 				}
+				// TODO what about references that resolve late? Should these be considered?
 				keypath = resolveRef( parentInstance, descriptor[ 0 ].r, parentFragment ) || descriptor[ 0 ].r;
+				// We need to set up bindings between parent and child, but
+				// we can't do it yet because the child instance doesn't exist
+				// yet - so we make a note instead
 				toBind.push( {
 					childKeypath: key,
 					parentKeypath: keypath
 				} );
 				return get( parentInstance, keypath );
 			}
+			// We have a 'complex parameter' - we need to create a full-blown string
+			// fragment in order to evaluate and observe its value
 			parameter = new ComponentParameter( component, key, descriptor );
 			component.complexParameters.push( parameter );
 			return parameter.value;
@@ -7204,9 +7870,11 @@
 			var instance, parentFragment, partials, root, adapt;
 			parentFragment = component.parentFragment;
 			root = component.root;
+			// Make contents available as a {{>content}} partial
 			partials = {
 				content: contentDescriptor || []
 			};
+			// Use component default adaptors AND inherit parent adaptors.
 			adapt = combineAdaptors( root, Component.defaults.adapt, Component.adaptors );
 			instance = new Component( {
 				el: parentFragment.pNode,
@@ -7220,7 +7888,14 @@
 				adapt: adapt
 			} );
 			if ( docFrag ) {
+				// The component may be in the wrong place! This is because we
+				// are still populating the document fragment that will be appended
+				// to its parent node. So even though the component is *already*
+				// a child of the parent node, we need to detach it, then insert
+				// it into said document fragment, so that order is maintained
+				// (both figuratively and literally).
 				instance.insert( docFrag );
+				// (After inserting, we need to reset the node reference)
 				instance.fragment.pNode = instance.el = parentFragment.pNode;
 			}
 			return instance;
@@ -7228,6 +7903,7 @@
 
 		function combineAdaptors( root, defaultAdapt ) {
 			var adapt, len, i;
+			// Parent adaptors should take precedence, so they go first
 			if ( root.adapt.length ) {
 				adapt = root.adapt.map( function( stringOrObject ) {
 					if ( typeof stringOrObject === 'object' ) {
@@ -7238,6 +7914,8 @@
 			} else {
 				adapt = [];
 			}
+			// If the component has any adaptors that aren't already included,
+			// include them now
 			if ( len = defaultAdapt.length ) {
 				for ( i = 0; i < len; i += 1 ) {
 					if ( adapt.indexOf( defaultAdapt[ i ] ) === -1 ) {
@@ -7253,10 +7931,11 @@
 
 		return function createInitialComponentBindings( component, toBind ) {
 			toBind.forEach( function createInitialComponentBinding( pair ) {
-				var childValue;
+				var childValue, parentValue;
 				createComponentBinding( component, component.root, pair.parentKeypath, pair.childKeypath );
 				childValue = get( component.instance, pair.childKeypath );
-				if ( childValue !== undefined ) {
+				parentValue = get( component.root, pair.parentKeypath );
+				if ( childValue !== undefined && parentValue === undefined ) {
 					set( component.root, pair.parentKeypath, childValue );
 				}
 			} );
@@ -7265,6 +7944,11 @@
 
 	var render_DomFragment_Component_initialise_propagateEvents = function( warn ) {
 
+		// TODO how should event arguments be handled? e.g.
+		// <widget on-foo='bar:1,2,3'/>
+		// The event 'bar' will be fired on the parent instance
+		// when 'foo' fires on the child, but the 1,2,3 arguments
+		// will be lost
 		var errorMessage = 'Components currently only support simple events - you cannot include arguments. Sorry!';
 		return function( component, eventsDescriptor ) {
 			var eventName;
@@ -7294,6 +7978,7 @@
 
 	var render_DomFragment_Component_initialise_updateLiveQueries = function( component ) {
 		var ancestor, query;
+		// If there's a live query for this component type, add it
 		ancestor = component.root;
 		while ( ancestor ) {
 			if ( query = ancestor._liveComponentQueries[ component.name ] ) {
@@ -7315,15 +8000,23 @@
 			component.index = options.index;
 			component.indexRefBindings = {};
 			component.bindings = [];
+			// get the component constructor
 			Component = root.components[ options.descriptor.e ];
 			if ( !Component ) {
 				throw new Error( 'Component "' + options.descriptor.e + '" not found' );
 			}
+			// First, we need to create a model for the component - e.g. if we
+			// encounter <widget foo='bar'/> then we need to create a widget
+			// with `data: { foo: 'bar' }`.
+			//
+			// This may involve setting up some bindings, but we can't do it
+			// yet so we take some notes instead
 			toBind = [];
 			data = createModel( component, Component.data || {}, options.descriptor.a, toBind );
 			createInstance( component, Component, data, docFrag, options.descriptor.f );
 			createBindings( component, toBind );
 			propagateEvents( component, options.descriptor.v );
+			// intro, outro and decorator directives have no effect
 			if ( options.descriptor.t1 || options.descriptor.t2 || options.descriptor.o ) {
 				warn( 'The "intro", "outro" and "decorator" directives have no effect on components' );
 			}
@@ -7331,7 +8024,7 @@
 		};
 	}( config_types, utils_warn, render_DomFragment_Component_initialise_createModel__createModel, render_DomFragment_Component_initialise_createInstance, render_DomFragment_Component_initialise_createBindings, render_DomFragment_Component_initialise_propagateEvents, render_DomFragment_Component_initialise_updateLiveQueries );
 
-	var render_DomFragment_Component__Component = function( initialise ) {
+	var render_DomFragment_Component__Component = function( initialise, getNewKeypath ) {
 
 		var DomComponent = function( options, docFrag ) {
 			initialise( this, options, docFrag );
@@ -7354,8 +8047,32 @@
 					this.bindings.pop().teardown();
 				}
 				removeFromLiveComponentQueries( this );
+				// Add this flag so that we don't unnecessarily destroy the component's nodes
 				this.shouldDestroy = destroy;
 				this.instance.teardown();
+			},
+			reassign: function( indexRef, newIndex, oldKeypath, newKeypath ) {
+				var childInstance = this.instance,
+					parentInstance = childInstance._parent,
+					indexRefAlias, query;
+				this.bindings.forEach( function( binding ) {
+					var updated;
+					if ( binding.root !== parentInstance ) {
+						return;
+					}
+					if ( binding.keypath === indexRef ) {
+						childInstance.set( binding.otherKeypath, newIndex );
+					}
+					if ( updated = getNewKeypath( binding.keypath, oldKeypath, newKeypath ) ) {
+						binding.reassign( updated );
+					}
+				} );
+				if ( indexRefAlias = this.indexRefBindings[ indexRef ] ) {
+					childInstance.set( indexRefAlias, newIndex );
+				}
+				if ( query = this.root._liveComponentQueries[ this.name ] ) {
+					query._makeDirty();
+				}
 			},
 			toString: function() {
 				return this.instance.fragment.toString();
@@ -7393,7 +8110,7 @@
 				}
 			} while ( instance = instance._parent );
 		}
-	}( render_DomFragment_Component_initialise__initialise );
+	}( render_DomFragment_Component_initialise__initialise, render_shared_utils_getNewKeypath );
 
 	var render_DomFragment_Comment = function( types, detach ) {
 
@@ -7422,25 +8139,29 @@
 		return DomComment;
 	}( config_types, render_DomFragment_shared_detach );
 
-	var render_DomFragment__DomFragment = function( types, matches, initFragment, insertHtml, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
+	var render_DomFragment__DomFragment = function( types, matches, Fragment, insertHtml, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
 
 		var DomFragment = function( options ) {
 			if ( options.pNode ) {
 				this.docFrag = document.createDocumentFragment();
 			}
+			// if we have an HTML string, our job is easy.
 			if ( typeof options.descriptor === 'string' ) {
 				this.html = options.descriptor;
 				if ( this.docFrag ) {
-					this.nodes = insertHtml( this.html, options.pNode.tagName, this.docFrag );
+					this.nodes = insertHtml( this.html, options.pNode.tagName, options.pNode.namespaceURI, this.docFrag );
 				}
 			} else {
-				initFragment( this, options );
+				// otherwise we need to make a proper fragment
+				Fragment.init( this, options );
 			}
 		};
 		DomFragment.prototype = {
+			reassign: Fragment.reassign,
 			detach: function() {
 				var len, i;
 				if ( this.docFrag ) {
+					// if this was built from HTML, we just need to remove the nodes
 					if ( this.nodes ) {
 						len = this.nodes.length;
 						for ( i = 0; i < len; i += 1 ) {
@@ -7481,6 +8202,7 @@
 			},
 			teardown: function( destroy ) {
 				var node;
+				// if this was built from HTML, we just need to remove the nodes
 				if ( this.nodes && destroy ) {
 					while ( node = this.nodes.pop() ) {
 						node.parentNode.removeChild( node );
@@ -7505,10 +8227,13 @@
 				if ( this.items[ index + 1 ] ) {
 					return this.items[ index + 1 ].firstNode();
 				}
+				// if this is the root fragment, and there are no more items,
+				// it means we're at the end...
 				if ( this.owner === this.root ) {
 					if ( !this.owner.component ) {
 						return null;
 					}
+					// ...unless this is a component
 					return this.owner.component.findNextNode();
 				}
 				return this.owner.findNextNode( this );
@@ -7535,6 +8260,7 @@
 					len = this.nodes.length;
 					for ( i = 0; i < len; i += 1 ) {
 						node = this.nodes[ i ];
+						// we only care about elements
 						if ( node.nodeType !== 1 ) {
 							continue;
 						}
@@ -7564,6 +8290,7 @@
 					len = this.nodes.length;
 					for ( i = 0; i < len; i += 1 ) {
 						node = this.nodes[ i ];
+						// we only care about elements
 						if ( node.nodeType !== 1 ) {
 							continue;
 						}
@@ -7617,28 +8344,37 @@
 		};
 		circular.DomFragment = DomFragment;
 		return DomFragment;
-	}( config_types, utils_matches, render_shared_initFragment, render_DomFragment_shared_insertHtml, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
+	}( config_types, utils_matches, render_shared_Fragment__Fragment, render_DomFragment_shared_insertHtml, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
 
 	var Ractive_prototype_render = function( runloop, css, DomFragment ) {
 
 		return function Ractive_prototype_render( target, callback ) {
 			this._rendering = true;
 			runloop.start( this, callback );
+			// This method is part of the API for one reason only - so that it can be
+			// overwritten by components that don't want to use the templating system
+			// (e.g. canvas-based components). It shouldn't be called outside of the
+			// initialisation sequence!
 			if ( !this._initing ) {
 				throw new Error( 'You cannot call ractive.render() directly!' );
 			}
+			// Add CSS, if applicable
 			if ( this.constructor.css ) {
 				css.add( this.constructor );
 			}
+			// Render our *root fragment*
 			this.fragment = new DomFragment( {
 				descriptor: this.template,
 				root: this,
 				owner: this,
+				// saves doing `if ( this.parent ) { /*...*/ }` later on
 				pNode: target
 			} );
 			if ( target ) {
 				target.appendChild( this.fragment.docFrag );
 			}
+			// If this is *isn't* a child of a component that's in the process of rendering,
+			// it should call any `init()` methods at this point
 			if ( !this._parent || !this._parent._rendering ) {
 				initChildren( this );
 			}
@@ -7652,6 +8388,7 @@
 				if ( child.instance.init ) {
 					child.instance.init( child.options );
 				}
+				// now do the same for grandchildren, etc
 				initChildren( child.instance );
 			}
 		}
@@ -7660,6 +8397,7 @@
 	var Ractive_prototype_renderHTML = function( warn ) {
 
 		return function() {
+			// TODO remove this method in a future version!
 			warn( 'renderHTML() has been deprecated and will be removed in a future version. Please use toHTML() instead' );
 			return this.toHTML();
 		};
@@ -7685,8 +8423,10 @@
 				promise.then( callback );
 			}
 			runloop.start( this, fulfilPromise );
+			// If the root object is wrapped, try and use the wrapper's reset value
 			if ( ( wrapper = this._wrapped[ '' ] ) && wrapper.reset ) {
 				if ( wrapper.reset( data ) === false ) {
+					// reset was rejected, we need to replace the object
 					this.data = data;
 				}
 			} else {
@@ -7708,6 +8448,7 @@
 				fulfilPromise = fulfil;
 			} );
 			runloop.start( this, fulfilPromise );
+			// Set multiple keypaths in one go
 			if ( isObject( keypath ) ) {
 				map = keypath;
 				callback = value;
@@ -7744,8 +8485,12 @@
 		return function( callback ) {
 			var keypath, promise, fulfilPromise, shouldDestroy, originalCallback, fragment, nearestDetachingElement, unresolvedImplicitDependency;
 			this.fire( 'teardown' );
+			// If this is a component, and the component isn't marked for destruction,
+			// don't detach nodes from the DOM unnecessarily
 			shouldDestroy = !this.component || this.component.shouldDestroy;
 			if ( this.constructor.css ) {
+				// We need to find the nearest detaching element. When it gets removed
+				// from the DOM, it's safe to remove our CSS
 				if ( shouldDestroy ) {
 					originalCallback = callback;
 					callback = function() {
@@ -7775,12 +8520,15 @@
 			} );
 			runloop.start( this, fulfilPromise );
 			this.fragment.teardown( shouldDestroy );
+			// Cancel any animations in progress
 			while ( this._animations[ 0 ] ) {
 				this._animations[ 0 ].stop();
 			}
+			// Clear cache - this has the side-effect of unregistering keypaths from modified arrays.
 			for ( keypath in this._cache ) {
 				clearCache( this, keypath );
 			}
+			// Teardown any failed lookups - we don't need them to resolve any more
 			while ( unresolvedImplicitDependency = this._unresolvedImplicitDependencies.pop() ) {
 				unresolvedImplicitDependency.teardown();
 			}
@@ -7858,12 +8606,17 @@
 				i = bindings.length;
 				while ( i-- ) {
 					binding = bindings[ i ];
+					// special case - radio name bindings
 					if ( binding.radioName && !binding.node.checked ) {
 						continue;
 					}
+					// special case - checkbox name bindings
 					if ( binding.checkboxName ) {
 						if ( binding.changed() && deferredCheckboxes[ keypath ] !== true ) {
+							// we will need to see which checkboxes with the same name are checked,
+							// but we only want to do so once
 							deferredCheckboxes[ keypath ] = true;
+							// for quick lookup without indexOf
 							deferredCheckboxes.push( keypath );
 						}
 						continue;
@@ -7881,6 +8634,7 @@
 			if ( !cascade ) {
 				return;
 			}
+			// cascade
 			childDeps = ractive._depsMap[ keypath ];
 			if ( childDeps ) {
 				i = childDeps.length;
@@ -8011,11 +8765,14 @@
 						modifiers: match[ 2 ]
 					} );
 				}
+				// For each simple selector within the selector, we need to create a version
+				// that a) combines with the guid, and b) is inside the guid
 				dataAttr = '[data-rvcguid="' + guid + '"]';
 				base = selectorUnits.map( extractString );
 				i = selectorUnits.length;
 				while ( i-- ) {
 					appended = base.slice();
+					// Pseudo-selectors should go after the attribute selector
 					unit = selectorUnits[ i ];
 					appended[ i ] = unit.base + dataAttr + unit.modifiers || '';
 					prepended = base.slice();
@@ -8047,6 +8804,8 @@
 
 	var extend_inheritFromParent = function( registries, create, defineProperty, transformCss ) {
 
+		// This is where we inherit class-level options, such as `modifyArrays`
+		// or `append` or `twoway`, and registries such as `partials`
 		return function( Child, Parent ) {
 			registries.forEach( function( property ) {
 				if ( Parent[ property ] ) {
@@ -8056,6 +8815,7 @@
 			defineProperty( Child, 'defaults', {
 				value: create( Parent.defaults )
 			} );
+			// Special case - CSS
 			if ( Parent.css ) {
 				defineProperty( Child, 'css', {
 					value: Parent.defaults.noCssTransform ? Parent.css : transformCss( Parent.css, Child._guid )
@@ -8095,6 +8855,8 @@
 		registries.concat( initOptions.keys ).forEach( function( property ) {
 			blacklisted[ property ] = true;
 		} );
+		// This is where we augment the class-level options (inherited from
+		// Parent) with the values passed to Parent.extend()
 		return function( Child, childProps ) {
 			var key, member;
 			registries.forEach( function( property ) {
@@ -8110,6 +8872,7 @@
 			initOptions.keys.forEach( function( key ) {
 				var value = childProps[ key ];
 				if ( value !== undefined ) {
+					// we may need to wrap a function (e.g. the `complete` option)
 					if ( typeof value === 'function' && typeof Child[ key ] === 'function' ) {
 						Child.defaults[ key ] = wrapMethod( value, Child[ key ] );
 					} else {
@@ -8120,6 +8883,8 @@
 			for ( key in childProps ) {
 				if ( !blacklisted[ key ] && childProps.hasOwnProperty( key ) ) {
 					member = childProps[ key ];
+					// if this is a method that overwrites a prototype method, we may need
+					// to wrap it
 					if ( typeof member === 'function' && typeof Child.prototype[ key ] === 'function' ) {
 						Child.prototype[ key ] = wrapMethod( member, Child.prototype[ key ] );
 					} else {
@@ -8127,6 +8892,7 @@
 					}
 				}
 			}
+			// Special case - CSS
 			if ( childProps.css ) {
 				defineProperty( Child, 'css', {
 					value: Child.defaults.noCssTransform ? childProps.css : transformCss( childProps.css, Child._guid )
@@ -8138,14 +8904,18 @@
 	var extend_extractInlinePartials = function( isObject, augment ) {
 
 		return function( Child, childProps ) {
+			// does our template contain inline partials?
 			if ( isObject( Child.defaults.template ) ) {
 				if ( !Child.partials ) {
 					Child.partials = {};
 				}
+				// get those inline partials
 				augment( Child.partials, Child.defaults.template.partials );
+				// but we also need to ensure that any explicit partials override inline ones
 				if ( childProps.partials ) {
 					augment( Child.partials, childProps.partials );
 				}
+				// move template to where it belongs
 				Child.defaults.template = Child.defaults.template.main;
 			}
 		};
@@ -8177,6 +8947,7 @@
 
 		return function( Child ) {
 			var key;
+			// Parse partials, if necessary
 			if ( Child.partials ) {
 				for ( key in Child.partials ) {
 					if ( Child.partials.hasOwnProperty( key ) && typeof Child.partials[ key ] === 'string' ) {
@@ -8282,6 +9053,7 @@
 					errored = true;
 				}
 				diff( this, this.watchers, ractive._captured );
+				// reset
 				ractive._captured = originalCaptured;
 				if ( !errored ) {
 					this.setting = true;
@@ -8303,6 +9075,7 @@
 
 		function diff( computation, watchers, newDependencies ) {
 			var i, watcher, keypath;
+			// remove dependencies that are no longer used
 			i = watchers.length;
 			while ( i-- ) {
 				watcher = watchers[ i ];
@@ -8312,6 +9085,7 @@
 					watcher.teardown();
 				}
 			}
+			// create references for any new dependencies
 			i = newDependencies.length;
 			while ( i-- ) {
 				keypath = newDependencies[ i ];
@@ -8324,7 +9098,7 @@
 		return Computation;
 	}( utils_warn, global_runloop, shared_set, Ractive_initialise_computations_Watcher );
 
-	var Ractive_initialise_computations_createComputations = function( hasOwnProperty, getComputationSignature, Computation ) {
+	var Ractive_initialise_computations_createComputations = function( getComputationSignature, Computation ) {
 
 		return function createComputations( ractive, computed ) {
 			var key, signature;
@@ -8333,7 +9107,7 @@
 				ractive._computations[ key ] = new Computation( ractive, key, signature );
 			}
 		};
-	}( utils_hasOwnProperty, Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
+	}( Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
 
 	var Ractive_initialise = function( isClient, errors, initOptions, registries, warn, create, extend, fillGaps, defineProperties, getElement, isObject, isArray, getGuid, Promise, magicAdaptor, parse, createComputations ) {
 
@@ -8353,39 +9127,52 @@
 				options.adapt = options.adaptors;
 				delete options.adaptors;
 			}
+			// Options
+			// -------
 			defaults = ractive.constructor.defaults;
 			initOptions.keys.forEach( function( key ) {
 				if ( options[ key ] === undefined ) {
 					options[ key ] = defaults[ key ];
 				}
 			} );
+			// options
 			flags.forEach( function( flag ) {
 				ractive[ flag ] = options[ flag ];
 			} );
+			// special cases
 			if ( typeof ractive.adapt === 'string' ) {
 				ractive.adapt = [ ractive.adapt ];
 			}
 			if ( ractive.magic && !magicAdaptor ) {
 				throw new Error( 'Getters and setters (magic mode) are not supported in this browser' );
 			}
+			// Initialisation
+			// --------------
+			// We use Object.defineProperties (where possible) as these should be read-only
 			defineProperties( ractive, {
 				_initing: {
 					value: true,
 					writable: true
 				},
+				// Generate a unique identifier, for places where you'd use a weak map if it
+				// existed
 				_guid: {
 					value: getGuid()
 				},
+				// events
 				_subs: {
 					value: create( null ),
 					configurable: true
 				},
+				// cache
 				_cache: {
 					value: {}
 				},
+				// we need to be able to use hasOwnProperty, so can't inherit from null
 				_cacheMap: {
 					value: create( null )
 				},
+				// dependency graph
 				_deps: {
 					value: []
 				},
@@ -8395,40 +9182,51 @@
 				_patternObservers: {
 					value: []
 				},
+				// Keep a list of used evaluators, so we don't duplicate them
 				_evaluators: {
 					value: create( null )
 				},
+				// Computed properties
 				_computations: {
 					value: create( null )
 				},
+				// two-way bindings
 				_twowayBindings: {
 					value: {}
 				},
+				// animations (so we can stop any in progress at teardown)
 				_animations: {
 					value: []
 				},
+				// nodes registry
 				nodes: {
 					value: {}
 				},
+				// property wrappers
 				_wrapped: {
 					value: create( null )
 				},
+				// live queries
 				_liveQueries: {
 					value: []
 				},
 				_liveComponentQueries: {
 					value: []
 				},
+				// components to init at the end of a mutation
 				_childInitQueue: {
 					value: []
 				},
+				// data changes
 				_changes: {
 					value: []
 				},
+				// failed lookups, when we try to access data from ancestor scopes
 				_unresolvedImplicitDependencies: {
 					value: []
 				}
 			} );
+			// If this is a component, store a reference to the parent
 			if ( options._parent && options._component ) {
 				defineProperties( ractive, {
 					_parent: {
@@ -8438,6 +9236,7 @@
 						value: options._component
 					}
 				} );
+				// And store a reference to the instance on the component
 				options._component.instance = ractive;
 			}
 			if ( options.el ) {
@@ -8446,7 +9245,9 @@
 					throw new Error( 'Could not find container element' );
 				}
 			}
+			// Create local registry objects, with the global registries as prototypes
 			if ( options.eventDefinitions ) {
+				// TODO remove support
 				warn( 'ractive.eventDefinitions has been deprecated in favour of ractive.events. Support will be removed in future versions' );
 				options.events = options.eventDefinitions;
 			}
@@ -8457,19 +9258,23 @@
 					ractive[ registry ] = options[ registry ];
 				}
 			} );
+			// Special case
 			if ( !ractive.data ) {
 				ractive.data = {};
 			}
+			// Set up any computed values
 			computed = defaults.computed ? extend( create( defaults.computed ), options.computed ) : options.computed;
 			if ( computed ) {
 				createComputations( ractive, computed );
 			}
+			// Parse template, if necessary
 			template = options.template;
 			if ( typeof template === 'string' ) {
 				if ( !parse ) {
 					throw new Error( errors.missingParser );
 				}
 				if ( template.charAt( 0 ) === '#' && isClient ) {
+					// assume this is an ID of a <script type='text/ractive'> tag
 					templateEl = document.getElementById( template.substring( 1 ) );
 					if ( templateEl ) {
 						parsedTemplate = parse( templateEl.innerHTML, options );
@@ -8482,24 +9287,32 @@
 			} else {
 				parsedTemplate = template;
 			}
+			// deal with compound template
 			if ( isObject( parsedTemplate ) ) {
 				fillGaps( ractive.partials, parsedTemplate.partials );
 				parsedTemplate = parsedTemplate.main;
 			}
+			// If the template was an array with a single string member, that means
+			// we can use innerHTML - we just need to unpack it
 			if ( parsedTemplate && parsedTemplate.length === 1 && typeof parsedTemplate[ 0 ] === 'string' ) {
 				parsedTemplate = parsedTemplate[ 0 ];
 			}
 			ractive.template = parsedTemplate;
+			// Add partials to our registry
 			extend( ractive.partials, options.partials );
 			ractive.parseOptions = {
 				preserveWhitespace: options.preserveWhitespace,
 				sanitize: options.sanitize,
 				stripComments: options.stripComments
 			};
+			// Temporarily disable transitions, if noIntro flag is set
 			ractive.transitionsEnabled = options.noIntro ? false : options.transitionsEnabled;
+			// If we're in a browser, and no element has been specified, create
+			// a document fragment to use instead
 			if ( isClient && !ractive.el ) {
 				ractive.el = document.createDocumentFragment();
 			}
+			// If the target contains content, and `append` is falsy, clear it
 			if ( ractive.el && !options.append ) {
 				ractive.el.innerHTML = '';
 			}
@@ -8510,13 +9323,16 @@
 			if ( options.complete ) {
 				promise.then( options.complete.bind( ractive ) );
 			}
+			// reset transitionsEnabled
 			ractive.transitionsEnabled = options.transitionsEnabled;
+			// end init sequence
 			ractive._initing = false;
 		};
 	}( config_isClient, config_errors, config_initOptions, config_registries, utils_warn, utils_create, utils_extend, utils_fillGaps, utils_defineProperties, utils_getElement, utils_isObject, utils_isArray, utils_getGuid, utils_Promise, shared_get_magicAdaptor, parse__parse, Ractive_initialise_computations_createComputations );
 
 	var extend_initChildInstance = function( initOptions, wrapMethod, initialise ) {
 
+		// The Child constructor contains the default init options for this class
 		return function initChildInstance( child, Child, options ) {
 			initOptions.keys.forEach( function( key ) {
 				var value = options[ key ],
@@ -8529,6 +9345,11 @@
 				child.beforeInit( options );
 			}
 			initialise( child, options );
+			// If this is an inline component (i.e. NOT created with `var widget = new Widget()`,
+			// but rather `<widget/>` or similar), we don't want to call the `init` method until
+			// the component is in the DOM. That makes it easier for component authors to do stuff
+			// like `this.width = this.find('*').clientWidth` or whatever without using
+			// ugly setTimeout hacks.
 			if ( options._parent && options._parent._rendering ) {
 				options._parent._childInitQueue.push( {
 					instance: child,
@@ -8549,9 +9370,12 @@
 		return function extend( childProps ) {
 			var Parent = this,
 				Child, adaptor, i;
+			// if we're extending with another Ractive instance, inherit its
+			// prototype methods and default options as well
 			if ( childProps.prototype instanceof Ractive ) {
 				childProps = extendObject( {}, childProps, childProps.prototype, childProps.defaults );
 			}
+			// create Child constructor
 			Child = function( options ) {
 				initChildInstance( this, Child, options || {} );
 			};
@@ -8561,12 +9385,16 @@
 				extend: {
 					value: Parent.extend
 				},
+				// each component needs a guid, for managing CSS etc
 				_guid: {
 					value: getGuid()
 				}
 			} );
+			// Inherit options from parent
 			inheritFromParent( Child, Parent );
+			// Add new prototype methods and init options
 			inheritFromChildProps( Child, childProps );
+			// Special case - adaptors. Convert to function if possible
 			if ( Child.adaptors && ( i = Child.defaults.adapt.length ) ) {
 				while ( i-- ) {
 					adaptor = Child.defaults.adapt[ i ];
@@ -8575,7 +9403,9 @@
 					}
 				}
 			}
+			// Parse template and any partials that need it
 			if ( childProps.template ) {
+				// ignore inherited templates!
 				conditionallyParseTemplate( Child );
 				extractInlinePartials( Child, childProps );
 				conditionallyParsePartials( Child );
@@ -8584,18 +9414,19 @@
 		};
 	}( utils_create, utils_defineProperties, utils_getGuid, utils_extend, extend_inheritFromParent, extend_inheritFromChildProps, extend_extractInlinePartials, extend_conditionallyParseTemplate, extend_conditionallyParsePartials, extend_initChildInstance, circular );
 
-	var Ractive__Ractive = function( initOptions, svg, defineProperties, prototype, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
+	var Ractive__Ractive = function( initOptions, svg, defineProperties, proto, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
 
 		var Ractive = function( options ) {
 			initialise( this, options );
 		};
+		Ractive.prototype = proto;
+		// Read-only properties
 		defineProperties( Ractive, {
-			prototype: {
-				value: prototype
-			},
+			// Shared properties
 			partials: {
 				value: partialRegistry
 			},
+			// Plugins
 			adaptors: {
 				value: adaptorRegistry
 			},
@@ -8617,34 +9448,53 @@
 			interpolators: {
 				value: interpolatorsRegistry
 			},
+			// Default options
 			defaults: {
 				value: initOptions.defaults
 			},
+			// Support
 			svg: {
 				value: svg
 			},
 			VERSION: {
-				value: '--574720a-dirty'
+				value: '0.4.0'
 			}
 		} );
+		// TODO deprecated
 		Ractive.eventDefinitions = Ractive.events;
 		Ractive.prototype.constructor = Ractive;
+		// Namespaced constructors
 		Ractive.Promise = Promise;
+		// Static methods
 		Ractive.extend = extend;
 		Ractive.parse = parse;
 		circular.Ractive = Ractive;
 		return Ractive;
 	}( config_initOptions, config_svg, utils_defineProperties, Ractive_prototype__prototype, registries_partials, registries_adaptors, registries_components, registries_easing, registries_interpolators, utils_Promise, extend__extend, parse__parse, Ractive_initialise, circular );
 
-	var Ractive = function( Ractive, circular, legacy ) {
+	var Ractive = function( Ractive, circular ) {
 
 		var FUNCTION = 'function';
+		// Certain modules have circular dependencies. If we were bundling a
+		// module loader, e.g. almond.js, this wouldn't be a problem, but we're
+		// not - we're using amdclean as part of the build process. Because of
+		// this, we need to wait until all modules have loaded before those
+		// circular dependencies can be required.
 		while ( circular.length ) {
 			circular.pop()();
 		}
+		// Ractive.js makes liberal use of things like Array.prototype.indexOf. In
+		// older browsers, these are made available via a shim - here, we do a quick
+		// pre-flight check to make sure that either a) we're not in a shit browser,
+		// or b) we're using a Ractive-legacy.js build
 		if ( typeof Date.now !== FUNCTION || typeof String.prototype.trim !== FUNCTION || typeof Object.keys !== FUNCTION || typeof Array.prototype.indexOf !== FUNCTION || typeof Array.prototype.forEach !== FUNCTION || typeof Array.prototype.map !== FUNCTION || typeof Array.prototype.filter !== FUNCTION || typeof window !== 'undefined' && typeof window.addEventListener !== FUNCTION ) {
 			throw new Error( 'It looks like you\'re attempting to use Ractive.js in an older browser. You\'ll need to use one of the \'legacy builds\' in order to continue - see http://docs.ractivejs.org/latest/legacy-builds for more information.' );
 		}
+		// Internet Explorer derp. Methods that should be attached to Node.prototype
+		// are instead attached to HTMLElement.prototype, which means SVG elements
+		// can't use them. Remember kids, friends don't let friends use IE.
+		//
+		// This is here, rather than in legacy.js, because it affects IE9.
 		if ( typeof window !== 'undefined' && window.Node && !window.Node.prototype.contains && window.HTMLElement && window.HTMLElement.prototype.contains ) {
 			window.Node.prototype.contains = window.HTMLElement.prototype.contains;
 		}
