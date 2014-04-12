@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-11 - commit c4b37497
+	2014-04-12 - commit 8529cdd0
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3567,7 +3567,7 @@
 			this.type = types.REFERENCE;
 			this.priority = priority;
 			value = root.get( keypath );
-			if ( typeof value === 'function' ) {
+			if ( typeof value === 'function' && !value._nowrap ) {
 				value = wrapFunction( value, root, evaluator );
 			}
 			this.value = evaluator.values[ argNum ] = value;
@@ -9412,6 +9412,7 @@
 
 	var Ractive__Ractive = function( initOptions, svg, defineProperties, proto, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
 
+		// Main Ractive required object
 		var Ractive = function( options ) {
 			initialise( this, options );
 		};
