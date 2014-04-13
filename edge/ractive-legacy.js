@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-13 - commit 4ee2e490
+	2014-04-13 - commit 62f4c3af
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -7713,8 +7713,17 @@
 		};
 
 		function optionIsSelected( element ) {
-			var optionValue, selectValueAttribute, selectValueInterpolator, selectValue, i;
-			optionValue = element.attributes.value.value;
+			var optionValue, optionValueAttribute, optionValueInterpolator, selectValueAttribute, selectValueInterpolator, selectValue, i;
+			optionValueAttribute = element.attributes.value;
+			if ( optionValueAttribute.value ) {
+				optionValue = optionValueAttribute.value;
+			} else {
+				optionValueInterpolator = optionValueAttribute.interpolator;
+				if ( !optionValueInterpolator ) {
+					return;
+				}
+				optionValue = element.root.get( optionValueInterpolator.keypath || optionValueInterpolator.ref );
+			}
 			selectValueAttribute = element.select.attributes.value;
 			selectValueInterpolator = selectValueAttribute.interpolator;
 			if ( !selectValueInterpolator ) {
