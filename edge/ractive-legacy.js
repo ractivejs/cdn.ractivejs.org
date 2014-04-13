@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-13 - commit 62f4c3af
+	2014-04-13 - commit 22166d65
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -8211,7 +8211,7 @@
 			remaining = this.remaining();
 			endIndex = remaining.indexOf( '-->' );
 			if ( endIndex === -1 ) {
-				throw new Error( 'Unexpected end of input (expected "-->" to close comment)' );
+				throw new Error( 'Unexpected end of input (expected "-->" to close comment) on line ' + this.getLinePos() );
 			}
 			content = remaining.substr( 0, endIndex );
 			this.pos += endIndex + 3;
@@ -8296,7 +8296,7 @@
 			var start, tag, expected;
 			start = tokenizer.pos;
 			expected = function( str ) {
-				throw new Error( 'Unexpected character ' + tokenizer.remaining().charAt( 0 ) + ' (expected ' + str + ')' );
+				throw new Error( 'Unexpected character ' + tokenizer.remaining().charAt( 0 ) + ' (expected ' + str + ') on line ' + tokenizer.getLinePos() );
 			};
 			if ( !tokenizer.getStringMatch( '<' ) ) {
 				return null;
@@ -8979,6 +8979,14 @@
 			var token;
 			this.str = str;
 			this.pos = 0;
+			this.lines = [ -1,
+				0
+			];
+			var index = 0;
+			while ( ( index = str.indexOf( '\n', index ) ) >= 0 ) {
+				index++;
+				this.lines.push( index );
+			}
 			this.delimiters = options.delimiters;
 			this.tripleDelimiters = options.tripleDelimiters;
 			this.interpolate = options.interpolate;
@@ -8993,8 +9001,36 @@
 		};
 		Tokenizer.prototype = {
 			getToken: function() {
+				var tokenizer = this;
+				var pos = this.pos;
 				var token = this.getMustache() || this.getComment() || this.getTag() || this.getText();
+				token.getLinePos = function() {
+					return tokenizer.getLinePos( pos );
+				};
 				return token;
+			},
+			getLinePos: function( pos ) {
+				pos = pos || this.pos;
+				var line = 0;
+				var lines = this.lines;
+				var lineStart = 0;
+				var str = this.str;
+				while ( line < lines.length ) {
+					lineStart = lines[ line ];
+					if ( pos < lineStart ) {
+						line--;
+						lineStart = lines[ line ];
+						break;
+					}
+					line++;
+				}
+				return {
+					line: line - 1,
+					ch: pos - lineStart + 1,
+					toString: function() {
+						return this.line + ':' + this.ch + ':\n' + str.substring( lineStart, lines[ line + 1 ] ? lines[ line + 1 ] - 1 : str.length ) + '\n' + new Array( this.ch ).join( ' ' ) + '^----';
+					}
+				};
 			},
 			getMustache: getMustache,
 			getComment: getComment,
@@ -9017,14 +9053,14 @@
 				if ( next20.length === 20 ) {
 					next20 = next20 + '...';
 				}
-				throw new Error( 'Could not parse template: ' + ( last20 ? last20 + '<- ' : '' ) + 'failed at character ' + this.pos + ' ->' + next20 );
+				throw new Error( 'Could not parse template: ' + ( last20 ? last20 + '<- ' : '' ) + ' on line ' + this.getLinePos() + ' ->' + next20 );
 			},
 			expected: function( thing ) {
 				var remaining = this.remaining().substr( 0, 40 );
 				if ( remaining.length === 40 ) {
 					remaining += '...';
 				}
-				throw new Error( 'Tokenizer failed: unexpected string "' + remaining + '" (expected ' + thing + ')' );
+				throw new Error( 'Tokenizer failed: unexpected string "' + remaining + '" (expected ' + thing + ') on line ' + this.getLinePos() );
 			}
 		};
 		return Tokenizer;
@@ -9556,7 +9592,7 @@
 				case types.REFERENCE:
 					return '${' + refs.indexOf( token.n ) + '}';
 				default:
-					throw new Error( 'Could not stringify expression token. This error is unexpected' );
+					throw new Error( 'Could not stringify expression token. This error is unexpected on line ' + token.getLinePos() );
 			}
 		}
 	}( config_types, utils_isObject );
@@ -9709,7 +9745,7 @@
 				opening += ':' + stub.indexRef;
 			}
 			if ( opening.substr( 0, closing.length ) !== closing ) {
-				throw new Error( 'Could not parse template: Illegal closing section {{/' + closing + '}}. Expected {{/' + stub.ref + '}}.' );
+				throw new Error( 'Could not parse template: Illegal closing section {{/' + closing + '}}. Expected {{/' + stub.ref + '}} on line ' + token.getLinePos() );
 			}
 		}
 		SectionStub.prototype = {
