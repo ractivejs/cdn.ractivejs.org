@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-13 - commit 9a503de7
+	2014-04-14 - commit a8dbca0d
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -2665,7 +2665,7 @@
 			// if applicable
 			if ( query.live ) {
 				liveQueries.push( selector );
-				liveQueries[ selector ] = query;
+				liveQueries[ '_' + selector ] = query;
 			}
 			this.fragment.findAll( selector, query );
 			return query;
@@ -2689,7 +2689,7 @@
 			// if applicable
 			if ( query.live ) {
 				liveQueries.push( selector );
-				liveQueries[ selector ] = query;
+				liveQueries[ '_' + selector ] = query;
 			}
 			this.fragment.findAllComponents( selector, query );
 			return query;
@@ -6296,7 +6296,7 @@
 				i = liveQueries.length;
 				while ( i-- ) {
 					selector = liveQueries[ i ];
-					query = liveQueries[ selector ];
+					query = liveQueries[ '_' + selector ];
 					matchingStaticNodes = getMatchingStaticNodes( element, selector );
 					query.push.apply( query, matchingStaticNodes );
 				}
@@ -6558,7 +6558,7 @@
 			i = liveQueries.length;
 			while ( i-- ) {
 				selector = liveQueries[ i ];
-				query = liveQueries[ selector ];
+				query = liveQueries[ '_' + selector ];
 				if ( query._test( element ) ) {
 					// keep register of applicable selectors, for when we teardown
 					( element.liveQueries || ( element.liveQueries = [] ) ).push( query );
@@ -10523,7 +10523,7 @@
 		// If there's a live query for this component type, add it
 		ancestor = component.root;
 		while ( ancestor ) {
-			if ( query = ancestor._liveComponentQueries[ component.name ] ) {
+			if ( query = ancestor._liveComponentQueries[ '_' + component.name ] ) {
 				query.push( component.instance );
 			}
 			ancestor = ancestor._parent;
@@ -10612,7 +10612,7 @@
 				if ( indexRefAlias = this.indexRefBindings[ indexRef ] ) {
 					childInstance.set( indexRefAlias, newIndex );
 				}
-				if ( query = this.root._liveComponentQueries[ this.name ] ) {
+				if ( query = this.root._liveComponentQueries[ '_' + this.name ] ) {
 					query._makeDirty();
 				}
 			},
@@ -10647,7 +10647,7 @@
 			var instance, query;
 			instance = component.root;
 			do {
-				if ( query = instance._liveComponentQueries[ component.name ] ) {
+				if ( query = instance._liveComponentQueries[ '_' + component.name ] ) {
 					query._remove( component );
 				}
 			} while ( instance = instance._parent );
