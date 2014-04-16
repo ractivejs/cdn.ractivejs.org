@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-16 - commit bc78a147
+	2014-04-16 - commit 371d6552
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -6222,55 +6222,67 @@
 		return StringText;
 	}( config_types );
 
-	var render_StringFragment_prototype_toArgsList = function( warn, parseJSON ) {
+	var render_StringFragment_prototype_getValue = function( types, warn, parseJSON ) {
 
-		return function() {
-			var values, counter, jsonesque, guid, errorMessage, parsed, processItems;
-			if ( !this.argsList || this.dirty ) {
-				values = {};
-				counter = 0;
-				guid = this.root._guid;
-				processItems = function( items ) {
-					return items.map( function( item ) {
-						var placeholderId, wrapped, value;
-						if ( item.text ) {
-							return item.text;
-						}
-						if ( item.fragments ) {
-							return item.fragments.map( function( fragment ) {
-								return processItems( fragment.items );
-							} ).join( '' );
-						}
-						placeholderId = guid + '-' + counter++;
-						if ( wrapped = item.root._wrapped[ item.keypath ] ) {
-							value = wrapped.value;
-						} else {
-							value = item.value;
-						}
-						values[ placeholderId ] = value;
-						return '${' + placeholderId + '}';
-					} ).join( '' );
-				};
-				jsonesque = processItems( this.items );
-				parsed = parseJSON( '[' + jsonesque + ']', values );
-				if ( !parsed ) {
-					errorMessage = 'Could not parse directive arguments (' + this.toString() + '). If you think this is a bug, please file an issue at http://github.com/RactiveJS/Ractive/issues';
-					if ( this.root.debug ) {
-						throw new Error( errorMessage );
-					} else {
-						warn( errorMessage );
-						this.argsList = [ jsonesque ];
+		var onlyWhitespace = /^\s*$/,
+			empty = {};
+		return function StringFragment$getValue( options ) {
+			var asArgs, parse, value, values, jsonesque, parsed, cache, dirtyFlag, result;
+			options = options || empty;
+			asArgs = options.args;
+			parse = asArgs || options.parse;
+			cache = asArgs ? 'argsList' : 'value';
+			dirtyFlag = asArgs ? 'dirtyArgs' : 'dirtyValue';
+			if ( this[ dirtyFlag ] || !this.hasOwnProperty( cache ) ) {
+				// Fast path
+				if ( this.items.length === 1 && this.items[ 0 ].type === types.INTERPOLATOR ) {
+					value = this.items[ 0 ].value;
+					if ( value !== undefined ) {
+						result = asArgs ? [ value ] : value;
 					}
 				} else {
-					this.argsList = parsed.value;
+					if ( parse ) {
+						values = {};
+						jsonesque = processItems( this.items, values, this.root._guid );
+						parsed = parseJSON( asArgs ? '[' + jsonesque + ']' : jsonesque, values );
+					}
+					if ( !parsed || !onlyWhitespace.test( parsed.remaining ) ) {
+						result = asArgs ? [ this.toString() ] : this.toString();
+					} else {
+						result = parsed.value;
+					}
 				}
-				this.dirty = false;
+				this[ cache ] = result;
+				this[ dirtyFlag ] = false;
 			}
-			return this.argsList;
+			return this[ cache ];
 		};
-	}( utils_warn, utils_parseJSON );
 
-	var render_StringFragment__StringFragment = function( types, parseJSON, Fragment, Interpolator, Section, Text, toArgsList, circular ) {
+		function processItems( items, values, guid, counter ) {
+			counter = counter || 0;
+			return items.map( function( item ) {
+				var placeholderId, wrapped, value;
+				if ( item.text ) {
+					return item.text;
+				}
+				if ( item.fragments ) {
+					return item.fragments.map( function( fragment ) {
+						return processItems( fragment.items, values, guid, counter );
+					} ).join( '' );
+				}
+				placeholderId = guid + '-' + counter++;
+				if ( wrapped = item.root._wrapped[ item.keypath ] ) {
+					value = wrapped.value;
+				} else {
+					value = item.value;
+				}
+				values[ placeholderId ] = value;
+				return '${' + placeholderId + '}';
+			} ).join( '' );
+		}
+	}( config_types, utils_warn, utils_parseJSON );
+
+	var render_StringFragment__StringFragment = function( types, parseJSON, Fragment, Interpolator, Section, Text, getValue, circular ) {
 
 		var StringFragment = function( options ) {
 			Fragment.init( this, options );
@@ -6293,7 +6305,7 @@
 				}
 			},
 			bubble: function() {
-				this.dirty = true;
+				this.dirtyValue = this.dirtyArgs = true;
 				this.owner.bubble();
 			},
 			teardown: function() {
@@ -6303,17 +6315,7 @@
 					this.items[ i ].teardown();
 				}
 			},
-			getValue: function() {
-				var value;
-				// Accommodate boolean attributes
-				if ( this.items.length === 1 && this.items[ 0 ].type === types.INTERPOLATOR ) {
-					value = this.items[ 0 ].value;
-					if ( value !== undefined ) {
-						return value;
-					}
-				}
-				return this.toString();
-			},
+			getValue: getValue,
 			isSimple: function() {
 				var i, item, containsInterpolator;
 				if ( this.simple !== undefined ) {
@@ -6351,12 +6353,11 @@
 					value = parsed ? parsed.value : value;
 				}
 				return value;
-			},
-			toArgsList: toArgsList
+			}
 		};
 		circular.StringFragment = StringFragment;
 		return StringFragment;
-	}( config_types, utils_parseJSON, render_shared_Fragment__Fragment, render_StringFragment_Interpolator, render_StringFragment_Section, render_StringFragment_Text, render_StringFragment_prototype_toArgsList, circular );
+	}( config_types, utils_parseJSON, render_shared_Fragment__Fragment, render_StringFragment_Interpolator, render_StringFragment_Section, render_StringFragment_Text, render_StringFragment_prototype_getValue, circular );
 
 	var render_DomFragment_Attribute__Attribute = function( runloop, types, determineNameAndNamespace, setStaticAttribute, determinePropertyName, getInterpolator, bind, update, StringFragment ) {
 
@@ -6617,7 +6618,11 @@
 
 	var render_DomFragment_Element_initialise_decorate_Decorator = function( warn, StringFragment ) {
 
-		var Decorator = function( descriptor, ractive, owner ) {
+		var getValueOptions, Decorator;
+		getValueOptions = {
+			args: true
+		};
+		Decorator = function( descriptor, ractive, owner ) {
 			var decorator = this,
 				name, fragment, errorMessage;
 			decorator.root = ractive;
@@ -6640,10 +6645,10 @@
 					root: ractive,
 					owner: owner
 				} );
-				decorator.params = decorator.fragment.toArgsList();
+				decorator.params = decorator.fragment.getValue( getValueOptions );
 				decorator.fragment.bubble = function() {
-					this.dirty = true;
-					decorator.params = this.toArgsList();
+					this.dirtyArgs = this.dirtyValue = true;
+					decorator.params = this.getValue( getValueOptions );
 					if ( decorator.ready ) {
 						decorator.update();
 					}
@@ -6706,7 +6711,9 @@
 
 	var render_DomFragment_Element_initialise_addEventProxies_addEventProxy = function( warn, StringFragment ) {
 
-		var addEventProxy,
+		var addEventProxy, getValueOptions = {
+				args: true
+			},
 			// helpers
 			MasterEventHandler, ProxyEvent, firePlainEvent, fireEventWithArgs, fireEventWithDynamicArgs, customHandlers, genericHandler, getCustomHandler;
 		addEventProxy = function( element, triggerEventName, proxyDescriptor, indexRefs ) {
@@ -6807,7 +6814,7 @@
 			].concat( this.a ) );
 		};
 		fireEventWithDynamicArgs = function( event ) {
-			var args = this.d.toArgsList();
+			var args = this.d.getValue( getValueOptions );
 			// need to strip [] from ends if a string!
 			if ( typeof args === 'string' ) {
 				args = args.substr( 1, args.length - 2 );
@@ -7325,7 +7332,10 @@
 
 	var render_DomFragment_Element_shared_executeTransition_Transition__Transition = function( warn, StringFragment, init, getStyle, setStyle, animateStyle, processParams, resetStyle ) {
 
-		var Transition;
+		var getValueOptions, Transition;
+		getValueOptions = {
+			args: true
+		};
 		Transition = function( descriptor, root, owner, isIntro ) {
 			var t = this,
 				name, fragment, errorMessage;
@@ -7365,7 +7375,7 @@
 					root: this.root,
 					owner: owner
 				} );
-				this.params = fragment.toArgsList();
+				this.params = fragment.getValue( getValueOptions );
 				fragment.teardown();
 			}
 			this._fn = root.transitions[ name ];
@@ -8087,7 +8097,11 @@
 
 	var render_DomFragment_Component_initialise_createModel_ComponentParameter = function( runloop, StringFragment ) {
 
-		var ComponentParameter = function( component, key, value ) {
+		var getValueOptions, ComponentParameter;
+		getValueOptions = {
+			parse: true
+		};
+		ComponentParameter = function( component, key, value ) {
 			this.parentFragment = component.parentFragment;
 			this.component = component;
 			this.key = key;
@@ -8097,7 +8111,7 @@
 				owner: this
 			} );
 			this.selfUpdating = this.fragment.isSimple();
-			this.value = this.fragment.getValue();
+			this.value = this.fragment.getValue( getValueOptions );
 		};
 		ComponentParameter.prototype = {
 			bubble: function() {
@@ -8110,7 +8124,7 @@
 				}
 			},
 			update: function() {
-				var value = this.fragment.getValue();
+				var value = this.fragment.getValue( getValueOptions );
 				this.component.instance.set( this.key, value );
 				this.value = value;
 			},
@@ -8123,6 +8137,7 @@
 
 	var render_DomFragment_Component_initialise_createModel__createModel = function( types, parseJSON, resolveRef, get, ComponentParameter ) {
 
+		var onlyWhitespace = /^\s*$/;
 		return function( component, defaultData, attributes, toBind ) {
 			var data, key, value;
 			data = {};
@@ -8148,7 +8163,10 @@
 			// If this is a static value, great
 			if ( typeof descriptor === 'string' ) {
 				parsed = parseJSON( descriptor );
-				return parsed ? parsed.value : descriptor;
+				if ( !parsed || !onlyWhitespace.test( parsed.remaining ) ) {
+					return descriptor;
+				}
+				return parsed.value;
 			}
 			// If null, we treat it as a boolean attribute (i.e. true)
 			if ( descriptor === null ) {
