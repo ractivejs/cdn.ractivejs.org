@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-14 - commit a8dbca0d
+	2014-04-16 - commit bc78a147
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -813,8 +813,7 @@
 		} );
 		var runloop, get, set, dirty = false,
 			flushing = false,
-			pendingCssChanges, inFlight = 0,
-			toFocus = null,
+			pendingCssChanges, toFocus = null,
 			liveQueries = [],
 			decorators = [],
 			transitions = [],
@@ -833,7 +832,6 @@
 			start: function( instance, callback ) {
 				this.addInstance( instance );
 				if ( !flushing ) {
-					inFlight += 1;
 					// create a new transition manager
 					transitionManager = makeTransitionManager( callback, transitionManager );
 				}
@@ -843,24 +841,20 @@
 					attemptKeypathResolution();
 					return;
 				}
-				if ( !--inFlight ) {
-					flushing = true;
-					flushChanges();
-					flushing = false;
-					land();
-				}
+				flushing = true;
+				flushChanges();
+				flushing = false;
 				transitionManager.init();
 				transitionManager = transitionManager._previous;
 			},
 			trigger: function() {
-				if ( inFlight || flushing ) {
+				if ( flushing ) {
 					attemptKeypathResolution();
 					return;
 				}
 				flushing = true;
 				flushChanges();
 				flushing = false;
-				land();
 			},
 			focus: function( node ) {
 				toFocus = node;
@@ -894,7 +888,7 @@
 			},
 			scheduleCssUpdate: function() {
 				// if runloop isn't currently active, we need to trigger change immediately
-				if ( !inFlight && !flushing ) {
+				if ( !flushing ) {
 					// TODO does this ever happen?
 					css.update();
 				} else {
@@ -939,8 +933,39 @@
 		circular.runloop = runloop;
 		return runloop;
 
-		function land() {
-			var thing, changedKeypath, changeHash;
+		function flushChanges() {
+			var thing, upstreamChanges, i, changeHash, changedKeypath;
+			i = instances.length;
+			while ( i-- ) {
+				thing = instances[ i ];
+				if ( thing._changes.length ) {
+					upstreamChanges = getUpstreamChanges( thing._changes );
+					notifyDependants.multiple( thing, upstreamChanges, true );
+				}
+			}
+			attemptKeypathResolution();
+			// These changes may have knock-on effects, so we need to keep
+			// looping until the system is settled
+			while ( dirty ) {
+				dirty = false;
+				while ( thing = computations.pop() ) {
+					thing.update();
+				}
+				while ( thing = evaluators.pop() ) {
+					thing.update().deferred = false;
+				}
+				while ( thing = selectValues.pop() ) {
+					thing.deferredUpdate();
+				}
+				while ( thing = checkboxes.pop() ) {
+					set( thing.root, thing.keypath, getValueFromCheckboxes( thing.root, thing.keypath ) );
+				}
+				while ( thing = radios.pop() ) {
+					thing.update();
+				}
+			}
+			// Now that changes have been fully propagated, we can update the DOM
+			// and complete other tasks
 			if ( toFocus ) {
 				toFocus.focus();
 				toFocus = null;
@@ -977,37 +1002,6 @@
 			if ( pendingCssChanges ) {
 				css.update();
 				pendingCssChanges = false;
-			}
-		}
-
-		function flushChanges() {
-			var thing, upstreamChanges, i;
-			i = instances.length;
-			while ( i-- ) {
-				thing = instances[ i ];
-				if ( thing._changes.length ) {
-					upstreamChanges = getUpstreamChanges( thing._changes );
-					notifyDependants.multiple( thing, upstreamChanges, true );
-				}
-			}
-			attemptKeypathResolution();
-			while ( dirty ) {
-				dirty = false;
-				while ( thing = computations.pop() ) {
-					thing.update();
-				}
-				while ( thing = evaluators.pop() ) {
-					thing.update().deferred = false;
-				}
-				while ( thing = selectValues.pop() ) {
-					thing.deferredUpdate();
-				}
-				while ( thing = checkboxes.pop() ) {
-					set( thing.root, thing.keypath, getValueFromCheckboxes( thing.root, thing.keypath ) );
-				}
-				while ( thing = radios.pop() ) {
-					thing.update();
-				}
 			}
 		}
 
