@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-16 - commit 371d6552
+	2014-04-16 - commit a0f07ca0
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -6074,6 +6074,7 @@
 				result = [];
 				while ( valueToken = this.getToken() ) {
 					result.push( valueToken.v );
+					this.allowWhitespace();
 					if ( this.getStringMatch( ']' ) ) {
 						return {
 							v: result
