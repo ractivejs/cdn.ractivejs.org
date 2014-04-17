@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-16 - commit a0f07ca0
+	2014-04-17 - commit 76ad5779
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -7116,7 +7116,7 @@
 			parentFragment = element.parentFragment = options.parentFragment;
 			pNode = parentFragment.pNode;
 			descriptor = element.descriptor = options.descriptor;
-			element.parent = options.pElement;
+			element.parent = options.pElement || parentFragment.pElement;
 			element.root = root = parentFragment.root;
 			element.index = options.index;
 			element.lcName = descriptor.e.toLowerCase();
