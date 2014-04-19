@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-17 - commit 76ad5779
+	2014-04-19 - commit c3e706dc
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -8667,14 +8667,13 @@
 			var token;
 			this.str = str;
 			this.pos = 0;
-			this.lines = [ -1,
-				0
-			];
+			this.lines = [ 0 ];
 			var index = 0;
 			while ( ( index = str.indexOf( '\n', index ) ) >= 0 ) {
 				index++;
 				this.lines.push( index );
 			}
+			this.lines.push( str.length + 1 );
 			this.delimiters = options.delimiters;
 			this.tripleDelimiters = options.tripleDelimiters;
 			this.interpolate = options.interpolate;
@@ -8687,6 +8686,20 @@
 				this.tokens.push( token );
 			}
 		};
+		// from http://stackoverflow.com/a/4431347/100374
+		function getClosestLowIndex( a, x ) {
+			var lo = -1;
+			var hi = a.length;
+			while ( hi - lo > 1 ) {
+				var mid = 0 | ( lo + hi ) / 2;
+				if ( a[ mid ] <= x ) {
+					lo = mid;
+				} else {
+					hi = mid;
+				}
+			}
+			return lo;
+		}
 		Tokenizer.prototype = {
 			getToken: function() {
 				var tokenizer = this;
@@ -8698,25 +8711,28 @@
 				return token;
 			},
 			getLinePos: function( pos ) {
-				pos = pos || this.pos;
-				var line = 0;
-				var lines = this.lines;
-				var lineStart = 0;
-				var str = this.str;
-				while ( line < lines.length ) {
-					lineStart = lines[ line ];
-					if ( pos < lineStart ) {
-						line--;
-						lineStart = lines[ line ];
-						break;
-					}
-					line++;
+				if ( arguments.length === 0 ) {
+					pos = this.pos;
 				}
+				var lines = this.lines;
+				var str = this.str;
+				var line = getClosestLowIndex( lines, pos );
+				var lineStart = lines[ line ];
 				return {
-					line: line - 1,
+					line: line + 1,
 					ch: pos - lineStart + 1,
+					getLine: function() {
+						return str.substring( lineStart, lines[ line + 1 ] - 1 );
+					},
+					toJSON: function() {
+						return [
+							this.line,
+							this.ch
+						];
+					},
 					toString: function() {
-						return this.line + ':' + this.ch + ':\n' + str.substring( lineStart, lines[ line + 1 ] ? lines[ line + 1 ] - 1 : str.length ) + '\n' + new Array( this.ch ).join( ' ' ) + '^----';
+						var line = this.getLine();
+						return this.line + ':' + this.ch + ':\n' + line + '\n' + line.substr( 0, this.ch - 1 ).replace( /[\S]/g, ' ' ) + '^----';
 					}
 				};
 			},
