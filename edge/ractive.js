@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-19 - commit c3e706dc
+	2014-04-19 - commit 4432f246
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -4514,6 +4514,7 @@
 				descriptor: section.descriptor.f,
 				root: section.root,
 				pNode: section.parentFragment.pNode,
+				pElement: section.pElement,
 				owner: section,
 				indexRef: section.descriptor.i
 			};
@@ -4540,6 +4541,7 @@
 		DomSection = function( options, docFrag ) {
 			this.type = types.SECTION;
 			this.inverted = !! options.descriptor.n;
+			this.pElement = options.pElement;
 			this.fragments = [];
 			this.length = 0;
 			// number of times this section is rendered
