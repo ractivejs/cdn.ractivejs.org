@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-19 - commit 5b1455ce
+	2014-04-19 - commit f916c7cb
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -12193,7 +12193,9 @@
 			ractive.parseOptions = {
 				preserveWhitespace: options.preserveWhitespace,
 				sanitize: options.sanitize,
-				stripComments: options.stripComments
+				stripComments: options.stripComments,
+				delimiters: options.delimiters,
+				tripleDelimiters: options.tripleDelimiters
 			};
 			// Temporarily disable transitions, if noIntro flag is set
 			ractive.transitionsEnabled = options.noIntro ? false : options.transitionsEnabled;
