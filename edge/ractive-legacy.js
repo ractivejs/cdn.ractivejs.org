@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-19 - commit f916c7cb
+	2014-04-19 - commit 80d1d558
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3711,11 +3711,6 @@
 	var render_shared_Fragment_reassign = function( assignNewKeypath ) {
 
 		return function reassignFragment( indexRef, newIndex, oldKeypath, newKeypath ) {
-			// If this fragment was rendered with innerHTML, we have nothing to do
-			// TODO a less hacky way of determining this
-			if ( this.html !== undefined ) {
-				return;
-			}
 			// assign new context keypath if needed
 			assignNewKeypath( this, 'context', oldKeypath, newKeypath );
 			if ( this.indexRefs && this.indexRefs[ indexRef ] !== undefined && this.indexRefs[ indexRef ] !== newIndex ) {
@@ -3734,65 +3729,6 @@
 			reassign: reassign
 		};
 	}( render_shared_Fragment_initialise, render_shared_Fragment_reassign );
-
-	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
-
-		var elementCache = {}, ieBug, ieBlacklist;
-		try {
-			createElement( 'table' ).innerHTML = 'foo';
-		} catch ( err ) {
-			ieBug = true;
-			ieBlacklist = {
-				TABLE: [
-					'<table class="x">',
-					'</table>'
-				],
-				THEAD: [
-					'<table><thead class="x">',
-					'</thead></table>'
-				],
-				TBODY: [
-					'<table><tbody class="x">',
-					'</tbody></table>'
-				],
-				TR: [
-					'<table><tr class="x">',
-					'</tr></table>'
-				],
-				SELECT: [
-					'<select class="x">',
-					'</select>'
-				]
-			};
-		}
-		return function( html, tagName, namespace, docFrag ) {
-			var container, nodes = [],
-				wrapper;
-			if ( html ) {
-				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
-					container = element( 'DIV' );
-					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
-					container = container.querySelector( '.x' );
-				} else if ( namespace === namespaces.svg ) {
-					container = element( 'DIV' );
-					container.innerHTML = '<svg class="x">' + html + '</svg>';
-					container = container.querySelector( '.x' );
-				} else {
-					container = element( tagName );
-					container.innerHTML = html;
-				}
-				while ( container.firstChild ) {
-					nodes.push( container.firstChild );
-					docFrag.appendChild( container.firstChild );
-				}
-			}
-			return nodes;
-		};
-
-		function element( tagName ) {
-			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
-		}
-	}( config_namespaces, utils_createElement );
 
 	var render_DomFragment_shared_detach = function() {
 		var node = this.node,
@@ -4966,6 +4902,65 @@
 		return DomSection;
 	}( config_types, render_shared_Mustache__Mustache, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, render_DomFragment_Section_prototype_splice, shared_teardown, circular );
 
+	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
+
+		var elementCache = {}, ieBug, ieBlacklist;
+		try {
+			createElement( 'table' ).innerHTML = 'foo';
+		} catch ( err ) {
+			ieBug = true;
+			ieBlacklist = {
+				TABLE: [
+					'<table class="x">',
+					'</table>'
+				],
+				THEAD: [
+					'<table><thead class="x">',
+					'</thead></table>'
+				],
+				TBODY: [
+					'<table><tbody class="x">',
+					'</tbody></table>'
+				],
+				TR: [
+					'<table><tr class="x">',
+					'</tr></table>'
+				],
+				SELECT: [
+					'<select class="x">',
+					'</select>'
+				]
+			};
+		}
+		return function( html, tagName, namespace, docFrag ) {
+			var container, nodes = [],
+				wrapper;
+			if ( html ) {
+				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
+					container = element( 'DIV' );
+					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
+					container = container.querySelector( '.x' );
+				} else if ( namespace === namespaces.svg ) {
+					container = element( 'DIV' );
+					container.innerHTML = '<svg class="x">' + html + '</svg>';
+					container = container.querySelector( '.x' );
+				} else {
+					container = element( tagName );
+					container.innerHTML = html;
+				}
+				while ( container.firstChild ) {
+					nodes.push( container.firstChild );
+					docFrag.appendChild( container.firstChild );
+				}
+			}
+			return nodes;
+		};
+
+		function element( tagName ) {
+			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
+		}
+	}( config_namespaces, utils_createElement );
+
 	var render_DomFragment_Triple = function( types, matches, Mustache, insertHtml, teardown ) {
 
 		var DomTriple = function( options, docFrag ) {
@@ -5140,7 +5135,7 @@
 	var render_DomFragment_Attribute_helpers_setStaticAttribute = function( namespaces ) {
 
 		return function setStaticAttribute( attribute, options ) {
-			var node, value = options.value === null ? '' : options.value;
+			var node, value = options.value || '';
 			if ( node = options.pNode ) {
 				if ( attribute.namespace ) {
 					node.setAttributeNS( attribute.namespace, options.name, value );
@@ -5161,7 +5156,7 @@
 					node._ractive.value = options.value;
 				}
 			}
-			attribute.value = options.value;
+			attribute.value = options.value || null;
 		};
 	}( config_namespaces );
 
@@ -6370,7 +6365,7 @@
 			determineNameAndNamespace( this, options.name );
 			// if it's an empty attribute, or just a straight key-value pair, with no
 			// mustache shenanigans, set the attribute accordingly and go home
-			if ( options.value === null || typeof options.value === 'string' ) {
+			if ( !options.value || typeof options.value === 'string' ) {
 				setStaticAttribute( this, options );
 				return;
 			}
@@ -6516,26 +6511,7 @@
 		};
 	}( render_DomFragment_Element_initialise_createElementAttribute );
 
-	var utils_toArray = function toArray( arrayLike ) {
-		var array = [],
-			i = arrayLike.length;
-		while ( i-- ) {
-			array[ i ] = arrayLike[ i ];
-		}
-		return array;
-	};
-
-	var render_DomFragment_Element_shared_getMatchingStaticNodes = function( toArray ) {
-
-		return function getMatchingStaticNodes( element, selector ) {
-			if ( !element.matchingStaticNodes[ selector ] ) {
-				element.matchingStaticNodes[ selector ] = toArray( element.node.querySelectorAll( selector ) );
-			}
-			return element.matchingStaticNodes[ selector ];
-		};
-	}( utils_toArray );
-
-	var render_DomFragment_Element_initialise_appendElementChildren = function( warn, namespaces, StringFragment, getMatchingStaticNodes, circular ) {
+	var render_DomFragment_Element_initialise_appendElementChildren = function( circular, warn, namespaces, StringFragment ) {
 
 		var DomFragment, updateCss, updateScript;
 		circular.push( function() {
@@ -6578,46 +6554,18 @@
 				}
 				return;
 			}
-			if ( typeof descriptor.f === 'string' && ( !node || ( !node.namespaceURI || node.namespaceURI === namespaces.html ) ) ) {
-				// great! we can use innerHTML
-				element.html = descriptor.f;
-				if ( docFrag ) {
-					node.innerHTML = element.html;
-					// Update live queries, if applicable
-					element.matchingStaticNodes = {};
-					// so we can remove matches made with querySelectorAll at teardown time
-					updateLiveQueries( element );
-				}
-			} else {
-				element.fragment = new DomFragment( {
-					descriptor: descriptor.f,
-					root: element.root,
-					pNode: node,
-					owner: element,
-					pElement: element
-				} );
-				if ( docFrag ) {
-					node.appendChild( element.fragment.docFrag );
-				}
+			element.fragment = new DomFragment( {
+				descriptor: descriptor.f,
+				root: element.root,
+				pNode: node,
+				owner: element,
+				pElement: element
+			} );
+			if ( docFrag ) {
+				node.appendChild( element.fragment.docFrag );
 			}
 		};
-
-		function updateLiveQueries( element ) {
-			var instance, liveQueries, node, selector, query, matchingStaticNodes, i;
-			node = element.node;
-			instance = element.root;
-			do {
-				liveQueries = instance._liveQueries;
-				i = liveQueries.length;
-				while ( i-- ) {
-					selector = liveQueries[ i ];
-					query = liveQueries[ '_' + selector ];
-					matchingStaticNodes = getMatchingStaticNodes( element, selector );
-					query.push.apply( query, matchingStaticNodes );
-				}
-			} while ( instance = instance._parent );
-		}
-	}( utils_warn, config_namespaces, render_StringFragment__StringFragment, render_DomFragment_Element_shared_getMatchingStaticNodes, circular );
+	}( circular, utils_warn, config_namespaces, render_StringFragment__StringFragment );
 
 	var render_DomFragment_Element_initialise_decorate_Decorator = function( warn, StringFragment ) {
 
@@ -7613,18 +7561,12 @@
 		};
 
 		function removeFromLiveQueries( element ) {
-			var query, selector, matchingStaticNodes, i, j;
+			var query, selector, i;
 			i = element.liveQueries.length;
 			while ( i-- ) {
 				query = element.liveQueries[ i ];
 				selector = query.selector;
 				query._remove( element.node );
-				if ( element.matchingStaticNodes && ( matchingStaticNodes = element.matchingStaticNodes[ selector ] ) ) {
-					j = matchingStaticNodes.length;
-					while ( j-- ) {
-						query.remove( matchingStaticNodes[ j ] );
-					}
-				}
 			}
 		}
 	}( global_runloop, render_DomFragment_Element_shared_executeTransition__executeTransition );
@@ -7706,9 +7648,7 @@
 				str += ' checked';
 			}
 			str += '>';
-			if ( this.html ) {
-				str += this.html;
-			} else if ( this.fragment ) {
+			if ( this.fragment ) {
 				str += this.fragment.toString();
 			}
 			// add a closing tag if this isn't a void element
@@ -7768,12 +7708,8 @@
 	var render_DomFragment_Element_prototype_find = function( matches ) {
 
 		return function( selector ) {
-			var queryResult;
 			if ( matches( this.node, selector ) ) {
 				return this.node;
-			}
-			if ( this.html && ( queryResult = this.node.querySelector( selector ) ) ) {
-				return queryResult;
 			}
 			if ( this.fragment && this.fragment.find ) {
 				return this.fragment.find( selector );
@@ -7781,27 +7717,16 @@
 		};
 	}( utils_matches );
 
-	var render_DomFragment_Element_prototype_findAll = function( getMatchingStaticNodes ) {
-
-		return function( selector, query ) {
-			var matchingStaticNodes, matchedSelf;
-			// Add this node to the query, if applicable, and register the
-			// query on this element
-			if ( query._test( this, true ) && query.live ) {
-				( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
-			}
-			if ( this.html ) {
-				matchingStaticNodes = getMatchingStaticNodes( this, selector );
-				query.push.apply( query, matchingStaticNodes );
-				if ( query.live && !matchedSelf ) {
-					( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
-				}
-			}
-			if ( this.fragment ) {
-				this.fragment.findAll( selector, query );
-			}
-		};
-	}( render_DomFragment_Element_shared_getMatchingStaticNodes );
+	var render_DomFragment_Element_prototype_findAll = function( selector, query ) {
+		// Add this node to the query, if applicable, and register the
+		// query on this element
+		if ( query._test( this, true ) && query.live ) {
+			( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
+		}
+		if ( this.fragment ) {
+			this.fragment.findAll( selector, query );
+		}
+	};
 
 	var render_DomFragment_Element_prototype_findComponent = function( selector ) {
 		if ( this.fragment ) {
@@ -9114,25 +9039,9 @@
 		};
 	}( config_initOptions, parse_utils_stripHtmlComments, parse_utils_stripStandalones, parse_utils_stripCommentTokens, parse_Tokenizer__Tokenizer );
 
-	var parse_Parser_getText_TextStub__TextStub = function( types ) {
+	var parse_Parser_utils_decodeCharacterReferences = function() {
 
-		var TextStub,
-			// helpers
-			htmlEntities, controlCharacters, namedEntityPattern, hexEntityPattern, decimalEntityPattern, validateCode, decodeCharacterReferences, whitespace;
-		TextStub = function( token, preserveWhitespace ) {
-			this.text = preserveWhitespace ? token.value : token.value.replace( whitespace, ' ' );
-		};
-		TextStub.prototype = {
-			type: types.TEXT,
-			toJSON: function() {
-				// this will be used within HTML, so we need to decode things like &amp;
-				return this.decoded || ( this.decoded = decodeCharacterReferences( this.text ) );
-			},
-			toString: function() {
-				// this will be used as straight text
-				return this.text;
-			}
-		};
+		var htmlEntities, controlCharacters, namedEntityPattern, hexEntityPattern, decimalEntityPattern;
 		htmlEntities = {
 			quot: 34,
 			amp: 38,
@@ -9425,12 +9334,31 @@
 		namedEntityPattern = new RegExp( '&(' + Object.keys( htmlEntities ).join( '|' ) + ');?', 'g' );
 		hexEntityPattern = /&#x([0-9]+);?/g;
 		decimalEntityPattern = /&#([0-9]+);?/g;
+		return function decodeCharacterReferences( html ) {
+			var result;
+			// named entities
+			result = html.replace( namedEntityPattern, function( match, name ) {
+				if ( htmlEntities[ name ] ) {
+					return String.fromCharCode( htmlEntities[ name ] );
+				}
+				return match;
+			} );
+			// hex references
+			result = result.replace( hexEntityPattern, function( match, hex ) {
+				return String.fromCharCode( validateCode( parseInt( hex, 16 ) ) );
+			} );
+			// decimal references
+			result = result.replace( decimalEntityPattern, function( match, charCode ) {
+				return String.fromCharCode( validateCode( charCode ) );
+			} );
+			return result;
+		};
 		// some code points are verboten. If we were inserting HTML, the browser would replace the illegal
 		// code points with alternatives in some cases - since we're bypassing that mechanism, we need
 		// to replace them ourselves
 		//
 		// Source: http://en.wikipedia.org/wiki/Character_encodings_in_HTML#Illegal_characters
-		validateCode = function( code ) {
+		function validateCode( code ) {
 			if ( !code ) {
 				return 65533;
 			}
@@ -9462,97 +9390,53 @@
 			// TODO it's... not exactly clear what should happen with code points over this value. The
 			// following seems to work. But I can't guarantee it works in China!
 			return 65533;
-		};
-		decodeCharacterReferences = function( html ) {
-			var result;
-			// named entities
-			result = html.replace( namedEntityPattern, function( match, name ) {
-				if ( htmlEntities[ name ] ) {
-					return String.fromCharCode( htmlEntities[ name ] );
-				}
-				return match;
-			} );
-			// hex references
-			result = result.replace( hexEntityPattern, function( match, hex ) {
-				return String.fromCharCode( validateCode( parseInt( hex, 16 ) ) );
-			} );
-			// decimal references
-			result = result.replace( decimalEntityPattern, function( match, charCode ) {
-				return String.fromCharCode( validateCode( charCode ) );
-			} );
-			return result;
-		};
-		whitespace = /\s+/g;
-		return TextStub;
-	}( config_types );
+		}
+	}();
 
-	var parse_Parser_getText__getText = function( types, TextStub ) {
+	var parse_Parser_getText = function( types, decodeCharacterReferences ) {
 
+		var whitespace = /\s+/g;
 		return function( token, preserveWhitespace ) {
+			var text;
 			if ( token.type === types.TEXT ) {
 				this.pos += 1;
-				return new TextStub( token, preserveWhitespace );
+				text = preserveWhitespace ? token.value : token.value.replace( whitespace, ' ' );
+				return decodeCharacterReferences( text );
 			}
 			return null;
 		};
-	}( config_types, parse_Parser_getText_TextStub__TextStub );
+	}( config_types, parse_Parser_utils_decodeCharacterReferences );
 
-	var parse_Parser_getComment_CommentStub__CommentStub = function( types ) {
-
-		var CommentStub;
-		CommentStub = function( token ) {
-			this.content = token.content;
-		};
-		CommentStub.prototype = {
-			toJSON: function() {
-				return {
-					t: types.COMMENT,
-					f: this.content
-				};
-			},
-			toString: function() {
-				return '<!--' + this.content + '-->';
-			}
-		};
-		return CommentStub;
-	}( config_types );
-
-	var parse_Parser_getComment__getComment = function( types, CommentStub ) {
+	var parse_Parser_getComment = function( types ) {
 
 		return function( token ) {
 			if ( token.type === types.COMMENT ) {
 				this.pos += 1;
-				return new CommentStub( token, this.preserveWhitespace );
+				return {
+					t: types.COMMENT,
+					c: token.content
+				};
 			}
 			return null;
 		};
-	}( config_types, parse_Parser_getComment_CommentStub__CommentStub );
+	}( config_types );
 
-	var parse_Parser_getMustache_ExpressionStub = function( types, isObject ) {
+	var parse_Parser_expressions_getExpression = function( types, isObject ) {
 
-		var ExpressionStub = function( token ) {
-			this.refs = [];
-			getRefs( token, this.refs );
-			this.str = stringify( token, this.refs );
+		return function getExpression( token ) {
+			var refs = [];
+			extractRefs( token, refs );
+			return {
+				r: refs,
+				s: stringify( token, refs )
+			};
 		};
-		ExpressionStub.prototype = {
-			toJSON: function() {
-				if ( !this.json ) {
-					this.json = {
-						r: this.refs,
-						s: this.str
-					};
-				}
-				return this.json;
-			}
-		};
-		return ExpressionStub;
 
 		function quoteStringLiteral( str ) {
 			return JSON.stringify( String( str ) );
 		}
 		// TODO maybe refactor this?
-		function getRefs( token, refs ) {
+		function extractRefs( token, refs ) {
 			var i, list;
 			if ( token.t === types.REFERENCE ) {
 				if ( refs.indexOf( token.n ) === -1 ) {
@@ -9562,22 +9446,22 @@
 			list = token.o || token.m;
 			if ( list ) {
 				if ( isObject( list ) ) {
-					getRefs( list, refs );
+					extractRefs( list, refs );
 				} else {
 					i = list.length;
 					while ( i-- ) {
-						getRefs( list[ i ], refs );
+						extractRefs( list[ i ], refs );
 					}
 				}
 			}
 			if ( token.x ) {
-				getRefs( token.x, refs );
+				extractRefs( token.x, refs );
 			}
 			if ( token.r ) {
-				getRefs( token.r, refs );
+				extractRefs( token.r, refs );
 			}
 			if ( token.v ) {
-				getRefs( token.v, refs );
+				extractRefs( token.v, refs );
 			}
 		}
 
@@ -9620,21 +9504,14 @@
 		}
 	}( config_types, utils_isObject );
 
-	var parse_Parser_getMustache_KeypathExpressionStub = function( types, ExpressionStub ) {
+	var parse_Parser_expressions_getKeypathExpression = function( types, getExpression ) {
 
-		var KeypathExpressionStub;
-		KeypathExpressionStub = function( token ) {
-			this.json = {
+		return function getKeypathExpression( token ) {
+			return {
 				r: token.r,
 				m: token.m.map( jsonify )
 			};
 		};
-		KeypathExpressionStub.prototype = {
-			toJSON: function() {
-				return this.json;
-			}
-		};
-		return KeypathExpressionStub;
 
 		function jsonify( member ) {
 			// Straightforward property, e.g. `foo.bar`?
@@ -9650,221 +9527,80 @@
 				return member.x;
 			}
 			// If none of the above, we need to process the AST
-			return new ExpressionStub( member.x ).toJSON();
+			return getExpression( member.x );
 		}
-	}( config_types, parse_Parser_getMustache_ExpressionStub );
+	}( config_types, parse_Parser_expressions_getExpression );
 
-	var parse_Parser_getMustache_MustacheStub = function( types, KeypathExpressionStub, ExpressionStub ) {
+	var parse_Parser_getMustache = function( types, normaliseKeypath, getKeypathExpression, getExpression ) {
 
-		var MustacheStub = function( token, parser ) {
-			this.type = token.type === types.TRIPLE ? types.TRIPLE : token.mustacheType;
-			if ( token.ref ) {
-				this.ref = token.ref;
-			}
-			if ( token.keypathExpression ) {
-				this.keypathExpr = new KeypathExpressionStub( token.keypathExpression );
-			}
-			if ( token.expression ) {
-				this.expr = new ExpressionStub( token.expression );
-			}
-			parser.pos += 1;
-		};
-		MustacheStub.prototype = {
-			toJSON: function() {
-				var json;
-				if ( this.json ) {
-					return this.json;
+		return function( token ) {
+			var stub, isSection, type, nextToken, fragment;
+			if ( token.type === types.MUSTACHE || token.type === types.TRIPLE ) {
+				if ( token.mustacheType === types.SECTION || token.mustacheType === types.INVERTED ) {
+					isSection = true;
 				}
-				json = {
-					t: this.type
+				this.pos += 1;
+				if ( token.type === types.TRIPLE ) {
+					type = types.TRIPLE;
+				} else if ( isSection ) {
+					type = types.SECTION;
+				} else {
+					type = token.mustacheType;
+				}
+				stub = {
+					t: type
 				};
-				if ( this.ref ) {
-					json.r = this.ref;
+				if ( token.ref ) {
+					stub.r = token.ref;
 				}
-				if ( this.keypathExpr ) {
-					json.kx = this.keypathExpr.toJSON();
+				if ( token.keypathExpression ) {
+					stub.kx = getKeypathExpression( token.keypathExpression );
 				}
-				if ( this.expr ) {
-					json.x = this.expr.toJSON();
+				if ( token.expression ) {
+					stub.x = getExpression( token.expression );
 				}
-				this.json = json;
-				return json;
-			},
-			toString: function() {
-				// mustaches cannot be stringified
-				return false;
-			}
-		};
-		return MustacheStub;
-	}( config_types, parse_Parser_getMustache_KeypathExpressionStub, parse_Parser_getMustache_ExpressionStub );
-
-	var parse_Parser_utils_stringifyStubs = function( items ) {
-		var str = '',
-			itemStr, i, len;
-		if ( !items ) {
-			return '';
-		}
-		for ( i = 0, len = items.length; i < len; i += 1 ) {
-			itemStr = items[ i ].toString();
-			if ( itemStr === false ) {
-				return false;
-			}
-			str += itemStr;
-		}
-		return str;
-	};
-
-	var parse_Parser_utils_jsonifyStubs = function( stringifyStubs ) {
-
-		return function( items, noStringify, topLevel ) {
-			var str, json;
-			if ( !topLevel && !noStringify ) {
-				str = stringifyStubs( items );
-				if ( str !== false ) {
-					return str;
+				if ( isSection ) {
+					if ( token.mustacheType === types.INVERTED ) {
+						stub.n = 1;
+					}
+					if ( token.indexRef ) {
+						stub.i = token.indexRef;
+					}
+					fragment = [];
+					nextToken = this.next();
+					while ( nextToken ) {
+						if ( nextToken.mustacheType === types.CLOSING ) {
+							validateClosing( stub, nextToken );
+							this.pos += 1;
+							break;
+						}
+						fragment.push( this.getItem() );
+						nextToken = this.next();
+					}
+					if ( fragment.length ) {
+						stub.f = fragment;
+					}
 				}
-			}
-			json = items.map( function( item ) {
-				return item.toJSON( noStringify );
-			} );
-			return json;
-		};
-	}( parse_Parser_utils_stringifyStubs );
-
-	var parse_Parser_getMustache_SectionStub = function( types, normaliseKeypath, jsonifyStubs, KeypathExpressionStub, ExpressionStub ) {
-
-		var SectionStub = function( firstToken, parser ) {
-			var next;
-			this.ref = firstToken.ref;
-			this.indexRef = firstToken.indexRef;
-			this.inverted = firstToken.mustacheType === types.INVERTED;
-			if ( firstToken.keypathExpression ) {
-				this.keypathExpr = new KeypathExpressionStub( firstToken.keypathExpression );
-			}
-			if ( firstToken.expression ) {
-				this.expr = new ExpressionStub( firstToken.expression );
-			}
-			parser.pos += 1;
-			this.items = [];
-			next = parser.next();
-			while ( next ) {
-				if ( next.mustacheType === types.CLOSING ) {
-					validateClosing( this, next );
-					parser.pos += 1;
-					break;
-				}
-				this.items.push( parser.getStub() );
-				next = parser.next();
+				return stub;
 			}
 		};
 
 		function validateClosing( stub, token ) {
-			var opening = stub.ref,
+			var opening = stub.r,
 				closing = normaliseKeypath( token.ref.trim() );
 			if ( !opening || !closing ) {
 				return;
 			}
-			if ( stub.indexRef ) {
-				opening += ':' + stub.indexRef;
+			if ( stub.i ) {
+				opening += ':' + stub.i;
 			}
 			if ( opening.substr( 0, closing.length ) !== closing ) {
-				throw new Error( 'Could not parse template: Illegal closing section {{/' + closing + '}}. Expected {{/' + stub.ref + '}} on line ' + token.getLinePos() );
+				throw new Error( 'Could not parse template: Illegal closing section {{/' + closing + '}}. Expected {{/' + stub.r + '}} on line ' + token.getLinePos() );
 			}
 		}
-		SectionStub.prototype = {
-			toJSON: function( noStringify ) {
-				var json;
-				if ( this.json ) {
-					return this.json;
-				}
-				json = {
-					t: types.SECTION
-				};
-				if ( this.ref ) {
-					json.r = this.ref;
-				}
-				if ( this.indexRef ) {
-					json.i = this.indexRef;
-				}
-				if ( this.inverted ) {
-					json.n = true;
-				}
-				if ( this.expr ) {
-					json.x = this.expr.toJSON();
-				}
-				if ( this.keypathExpr ) {
-					json.kx = this.keypathExpr.toJSON();
-				}
-				if ( this.items.length ) {
-					json.f = jsonifyStubs( this.items, noStringify );
-				}
-				this.json = json;
-				return json;
-			},
-			toString: function() {
-				// sections cannot be stringified
-				return false;
-			}
-		};
-		return SectionStub;
-	}( config_types, utils_normaliseKeypath, parse_Parser_utils_jsonifyStubs, parse_Parser_getMustache_KeypathExpressionStub, parse_Parser_getMustache_ExpressionStub );
+	}( config_types, utils_normaliseKeypath, parse_Parser_expressions_getKeypathExpression, parse_Parser_expressions_getExpression );
 
-	var parse_Parser_getMustache__getMustache = function( types, MustacheStub, SectionStub ) {
-
-		return function( token ) {
-			if ( token.type === types.MUSTACHE || token.type === types.TRIPLE ) {
-				if ( token.mustacheType === types.SECTION || token.mustacheType === types.INVERTED ) {
-					return new SectionStub( token, this );
-				}
-				return new MustacheStub( token, this );
-			}
-		};
-	}( config_types, parse_Parser_getMustache_MustacheStub, parse_Parser_getMustache_SectionStub );
-
-	var parse_Parser_getElement_ElementStub_utils_siblingsByTagName = {
-		li: [ 'li' ],
-		dt: [
-			'dt',
-			'dd'
-		],
-		dd: [
-			'dt',
-			'dd'
-		],
-		p: 'address article aside blockquote dir div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hgroup hr menu nav ol p pre section table ul'.split( ' ' ),
-		rt: [
-			'rt',
-			'rp'
-		],
-		rp: [
-			'rp',
-			'rt'
-		],
-		optgroup: [ 'optgroup' ],
-		option: [
-			'option',
-			'optgroup'
-		],
-		thead: [
-			'tbody',
-			'tfoot'
-		],
-		tbody: [
-			'tbody',
-			'tfoot'
-		],
-		tr: [ 'tr' ],
-		td: [
-			'td',
-			'th'
-		],
-		th: [
-			'td',
-			'th'
-		]
-	};
-
-	var parse_Parser_getElement_ElementStub_utils_filterAttributes = function( isArray ) {
+	var parse_Parser_getElement_utils_filterAttributes = function( isArray ) {
 
 		return function( items ) {
 			var attrs, proxies, filtered, i, len, item;
@@ -9926,18 +9662,28 @@
 		}
 	}( utils_isArray );
 
-	var parse_Parser_getElement_ElementStub_utils_processDirective = function( types, parseJSON ) {
+	var parse_Parser_utils_getStringFragment = function( circular ) {
 
+		var Parser, empty = {};
+		circular.push( function() {
+			Parser = circular.Parser;
+		} );
+		return function getStringFragment( tokens ) {
+			var parser = new Parser( tokens, empty );
+			return parser.result;
+		};
+	}( circular );
+
+	var parse_Parser_getElement_utils_processDirective = function( types, parseJSON, getStringFragment ) {
+
+		// TODO clean this up, it's shocking
 		return function( directive ) {
-			var processed, tokens, token, colonIndex, throwError, directiveName, directiveArgs, parsed;
-			throwError = function() {
-				throw new Error( 'Illegal directive' );
-			};
+			var result, tokens, token, colonIndex, directiveName, directiveArgs, parsed;
 			if ( !directive.name || !directive.value ) {
-				throwError();
+				throw new Error( 'Illegal directive' );
 			}
-			processed = {
-				directiveType: directive.name
+			result = {
+				type: directive.name
 			};
 			tokens = directive.value;
 			directiveName = [];
@@ -9973,395 +9719,231 @@
 			}
 			directiveArgs = directiveArgs.concat( tokens );
 			if ( directiveName.length === 1 && directiveName[ 0 ].type === types.TEXT ) {
-				processed.name = directiveName[ 0 ].value;
+				directiveName = directiveName[ 0 ].value;
 			} else {
-				processed.name = directiveName;
+				directiveName = getStringFragment( directiveName );
 			}
-			if ( directiveArgs.length ) {
+			if ( directiveArgs.length || typeof directiveName !== 'string' ) {
+				result.value = {
+					n: directiveName
+				};
 				if ( directiveArgs.length === 1 && directiveArgs[ 0 ].type === types.TEXT ) {
 					parsed = parseJSON( '[' + directiveArgs[ 0 ].value + ']' );
-					processed.args = parsed ? parsed.value : directiveArgs[ 0 ].value;
+					result.value.a = parsed ? parsed.value : directiveArgs[ 0 ].value;
 				} else {
-					processed.dynamicArgs = directiveArgs;
+					result.value.d = getStringFragment( directiveArgs );
 				}
-			}
-			return processed;
-		};
-	}( config_types, utils_parseJSON );
-
-	var parse_Parser_StringStub_StringParser = function( getText, getMustache ) {
-
-		var StringParser;
-		StringParser = function( tokens, options ) {
-			// TODO what are the options?
-			var stub;
-			this.tokens = tokens || [];
-			this.pos = 0;
-			this.options = options;
-			this.result = [];
-			while ( stub = this.getStub() ) {
-				this.result.push( stub );
-			}
-		};
-		StringParser.prototype = {
-			getStub: function() {
-				var token = this.next();
-				if ( !token ) {
-					return null;
-				}
-				return this.getText( token ) || this.getMustache( token );
-			},
-			getText: getText,
-			getMustache: getMustache,
-			next: function() {
-				return this.tokens[ this.pos ];
-			}
-		};
-		return StringParser;
-	}( parse_Parser_getText__getText, parse_Parser_getMustache__getMustache );
-
-	var parse_Parser_StringStub__StringStub = function( StringParser, stringifyStubs, jsonifyStubs ) {
-
-		var StringStub;
-		StringStub = function( tokens ) {
-			var parser = new StringParser( tokens );
-			this.stubs = parser.result;
-		};
-		StringStub.prototype = {
-			toJSON: function( noStringify ) {
-				var json;
-				if ( this[ 'json_' + noStringify ] ) {
-					return this[ 'json_' + noStringify ];
-				}
-				json = this[ 'json_' + noStringify ] = jsonifyStubs( this.stubs, noStringify );
-				return json;
-			},
-			toString: function() {
-				if ( this.str !== undefined ) {
-					return this.str;
-				}
-				this.str = stringifyStubs( this.stubs );
-				return this.str;
-			}
-		};
-		return StringStub;
-	}( parse_Parser_StringStub_StringParser, parse_Parser_utils_stringifyStubs, parse_Parser_utils_jsonifyStubs );
-
-	var parse_Parser_getElement_ElementStub_utils_jsonifyDirective = function( StringStub ) {
-
-		return function( directive ) {
-			var result, name;
-			if ( typeof directive.name === 'string' ) {
-				if ( !directive.args && !directive.dynamicArgs ) {
-					return directive.name;
-				}
-				name = directive.name;
 			} else {
-				name = new StringStub( directive.name ).toJSON();
-			}
-			result = {
-				n: name
-			};
-			if ( directive.args ) {
-				result.a = directive.args;
-				return result;
-			}
-			if ( directive.dynamicArgs ) {
-				result.d = new StringStub( directive.dynamicArgs ).toJSON();
+				result.value = directiveName;
 			}
 			return result;
 		};
-	}( parse_Parser_StringStub__StringStub );
+	}( config_types, utils_parseJSON, parse_Parser_utils_getStringFragment );
 
-	var parse_Parser_getElement_ElementStub_toJSON = function( types, jsonifyStubs, jsonifyDirective ) {
+	var parse_Parser_getElement_utils_getAttributeStubs = function( getStringFragment ) {
 
-		return function( noStringify ) {
-			var json, name, value, proxy, i, len, attribute;
-			if ( this[ 'json_' + noStringify ] ) {
-				return this[ 'json_' + noStringify ];
-			}
-			json = {
-				t: types.ELEMENT,
-				e: this.tag
-			};
-			if ( this.doctype ) {
-				json.y = 1;
-			}
-			if ( this.attributes && this.attributes.length ) {
-				json.a = {};
-				len = this.attributes.length;
-				for ( i = 0; i < len; i += 1 ) {
-					attribute = this.attributes[ i ];
-					name = attribute.name;
-					if ( json.a[ name ] ) {
-						throw new Error( 'You cannot have multiple attributes with the same name' );
+		return function( attributes ) {
+			var a;
+			a = {};
+			attributes.forEach( function( attribute ) {
+				var value;
+				if ( attribute.value ) {
+					value = getStringFragment( attribute.value );
+					if ( value.length === 1 && typeof value[ 0 ] === 'string' ) {
+						value = value[ 0 ];
 					}
-					// empty attributes (e.g. autoplay, checked)
-					if ( attribute.value === null ) {
-						value = null;
-					} else {
-						//value = jsonifyStubs( attribute.value, noStringify );
-						value = attribute.value.toJSON( noStringify );
-					}
-					json.a[ name ] = value;
+				} else {
+					value = 0;
 				}
-			}
-			if ( this.items && this.items.length ) {
-				json.f = jsonifyStubs( this.items, noStringify );
-			}
-			if ( this.proxies && this.proxies.length ) {
-				json.v = {};
-				len = this.proxies.length;
-				for ( i = 0; i < len; i += 1 ) {
-					proxy = this.proxies[ i ];
-					json.v[ proxy.directiveType ] = jsonifyDirective( proxy );
-				}
-			}
-			if ( this.intro ) {
-				json.t1 = jsonifyDirective( this.intro );
-			}
-			if ( this.outro ) {
-				json.t2 = jsonifyDirective( this.outro );
-			}
-			if ( this.decorator ) {
-				json.o = jsonifyDirective( this.decorator );
-			}
-			this[ 'json_' + noStringify ] = json;
-			return json;
+				a[ attribute.name ] = value;
+			} );
+			return a;
 		};
-	}( config_types, parse_Parser_utils_jsonifyStubs, parse_Parser_getElement_ElementStub_utils_jsonifyDirective );
+	}( parse_Parser_utils_getStringFragment );
 
-	var parse_Parser_getElement_ElementStub_toString = function( stringifyStubs, voidElementNames ) {
+	var parse_Parser_getElement_utils_siblingsByTagName = {
+		li: [ 'li' ],
+		dt: [
+			'dt',
+			'dd'
+		],
+		dd: [
+			'dt',
+			'dd'
+		],
+		p: 'address article aside blockquote dir div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hgroup hr menu nav ol p pre section table ul'.split( ' ' ),
+		rt: [
+			'rt',
+			'rp'
+		],
+		rp: [
+			'rp',
+			'rt'
+		],
+		optgroup: [ 'optgroup' ],
+		option: [
+			'option',
+			'optgroup'
+		],
+		thead: [
+			'tbody',
+			'tfoot'
+		],
+		tbody: [
+			'tbody',
+			'tfoot'
+		],
+		tr: [ 'tr' ],
+		td: [
+			'td',
+			'th'
+		],
+		th: [
+			'td',
+			'th'
+		]
+	};
 
-		var htmlElements;
-		htmlElements = 'a abbr acronym address applet area b base basefont bdo big blockquote body br button caption center cite code col colgroup dd del dfn dir div dl dt em fieldset font form frame frameset h1 h2 h3 h4 h5 h6 head hr html i iframe img input ins isindex kbd label legend li link map menu meta noframes noscript object ol p param pre q s samp script select small span strike strong style sub sup textarea title tt u ul var article aside audio bdi canvas command data datagrid datalist details embed eventsource figcaption figure footer header hgroup keygen mark meter nav output progress ruby rp rt section source summary time track video wbr'.split( ' ' );
-		return function() {
-			var str, i, len, attrStr, name, attrValueStr, fragStr, isVoid;
-			if ( this.str !== undefined ) {
-				return this.str;
-			}
-			// if this isn't an HTML element, it can't be stringified (since the only reason to stringify an
-			// element is to use with innerHTML, and SVG doesn't support that method.
-			// Note: table elements and select children are excluded from this, because IE (of course)
-			// fucks up when you use innerHTML with them
-			if ( htmlElements.indexOf( this.tag.toLowerCase() ) === -1 ) {
-				return this.str = false;
-			}
-			// do we have proxies or transitions or a decorator? if so we can't use innerHTML
-			if ( this.proxies || this.intro || this.outro || this.decorator ) {
-				return this.str = false;
-			}
-			// see if children can be stringified (i.e. don't contain mustaches)
-			fragStr = stringifyStubs( this.items );
-			if ( fragStr === false ) {
-				return this.str = false;
-			}
-			// is this a void element?
-			isVoid = voidElementNames.indexOf( this.tag.toLowerCase() ) !== -1;
-			str = '<' + this.tag;
-			if ( this.attributes ) {
-				for ( i = 0, len = this.attributes.length; i < len; i += 1 ) {
-					name = this.attributes[ i ].name;
-					// does this look like a namespaced attribute? if so we can't stringify it
-					if ( name.indexOf( ':' ) !== -1 ) {
-						return this.str = false;
-					}
-					// if this element has an id attribute, it can't be stringified (since references are stored
-					// in ractive.nodes). Similarly, intro and outro transitions
-					if ( name === 'id' || name === 'intro' || name === 'outro' ) {
-						return this.str = false;
-					}
-					attrStr = ' ' + name;
-					// empty attributes
-					if ( this.attributes[ i ].value !== null ) {
-						attrValueStr = this.attributes[ i ].value.toString();
-						if ( attrValueStr === false ) {
-							return this.str = false;
-						}
-						if ( attrValueStr !== '' ) {
-							attrStr += '=';
-							// does it need to be quoted?
-							if ( /[\s"'=<>`]/.test( attrValueStr ) ) {
-								attrStr += '"' + attrValueStr.replace( /"/g, '&quot;' ) + '"';
-							} else {
-								attrStr += attrValueStr;
-							}
-						}
-					}
-					str += attrStr;
-				}
-			}
-			// if this isn't a void tag, but is self-closing, add a solidus. Aaaaand, we're done
-			if ( this.selfClosing && !isVoid ) {
-				str += '/>';
-				return this.str = str;
-			}
-			str += '>';
-			// void element? we're done
-			if ( isVoid ) {
-				return this.str = str;
-			}
-			// if this has children, add them
-			str += fragStr;
-			str += '</' + this.tag + '>';
-			return this.str = str;
-		};
-	}( parse_Parser_utils_stringifyStubs, config_voidElementNames );
+	var parse_Parser_getElement__getElement = function( types, voidElementNames, filterAttributes, processDirective, getAttributeStubs, siblingsByTagName ) {
 
-	var parse_Parser_getElement_ElementStub__ElementStub = function( types, voidElementNames, warn, siblingsByTagName, filterAttributes, processDirective, toJSON, toString, StringStub ) {
-
-		var ElementStub,
-			// helpers
-			allElementNames, closedByParentClose, onPattern, sanitize, leadingWhitespace = /^\s+/,
-			trailingWhitespace = /\s+$/;
-		ElementStub = function( firstToken, parser, preserveWhitespace ) {
-			var next, attrs, filtered, proxies, item, getFrag, lowerCaseTag;
-			parser.pos += 1;
-			getFrag = function( attr ) {
-				return {
-					name: attr.name,
-					value: attr.value ? new StringStub( attr.value ) : null
-				};
-			};
-			// enforce lower case tag names by default. HTML doesn't care. SVG does, so if we see an SVG tag
-			// that should be camelcased, camelcase it
-			this.tag = firstToken.name;
-			lowerCaseTag = firstToken.name.toLowerCase();
-			if ( lowerCaseTag.substr( 0, 3 ) === 'rv-' ) {
-				warn( 'The "rv-" prefix for components has been deprecated. Support will be removed in a future version' );
-				this.tag = this.tag.substring( 3 );
+		var leadingWhitespace = /^\s+/,
+			trailingWhitespace = /\s+$/,
+			onPattern = /^on[a-zA-Z]/;
+		return function( token, preserveWhitespace ) {
+			var stub, lowerCaseTag, filtered, attrs, proxies, siblings, fragment, nextToken, item;
+			// Not a tag?
+			if ( token.type !== types.TAG ) {
+				return null;
 			}
-			// if this is a <pre> element, preserve whitespace within
-			preserveWhitespace = preserveWhitespace || lowerCaseTag === 'pre' || lowerCaseTag === 'style' || lowerCaseTag === 'script';
-			if ( firstToken.attrs ) {
-				filtered = filterAttributes( firstToken.attrs );
-				attrs = filtered.attrs;
-				proxies = filtered.proxies;
-				// remove event attributes (e.g. onclick='doSomething()') if we're sanitizing
-				if ( parser.options.sanitize && parser.options.sanitize.eventAttributes ) {
-					attrs = attrs.filter( sanitize );
-				}
-				if ( attrs.length ) {
-					this.attributes = attrs.map( getFrag );
-				}
-				// Process directives (proxy events, transitions, and decorators)
-				if ( proxies.length ) {
-					this.proxies = proxies.map( processDirective );
-				}
-				if ( filtered.intro ) {
-					this.intro = processDirective( filtered.intro );
-				}
-				if ( filtered.outro ) {
-					this.outro = processDirective( filtered.outro );
-				}
-				if ( filtered.decorator ) {
-					this.decorator = processDirective( filtered.decorator );
-				}
-			}
-			if ( firstToken.doctype ) {
-				this.doctype = true;
-			}
-			if ( firstToken.selfClosing ) {
-				this.selfClosing = true;
-			}
-			if ( voidElementNames.indexOf( lowerCaseTag ) !== -1 ) {
-				this.isVoid = true;
-			}
-			// if self-closing or a void element, close
-			if ( this.selfClosing || this.isVoid ) {
-				return;
-			}
-			this.siblings = siblingsByTagName[ lowerCaseTag ];
-			this.items = [];
-			next = parser.next();
-			while ( next ) {
-				// section closing mustache should also close this element, e.g.
-				// <ul>{{#items}}<li>{{content}}{{/items}}</ul>
-				if ( next.mustacheType === types.CLOSING ) {
-					break;
-				}
-				if ( next.type === types.TAG ) {
-					// closing tag
-					if ( next.closing ) {
-						// it's a closing tag, which means this element is closed...
-						if ( next.name.toLowerCase() === lowerCaseTag ) {
-							parser.pos += 1;
-						}
-						break;
-					} else if ( this.siblings && this.siblings.indexOf( next.name.toLowerCase() ) !== -1 ) {
-						break;
-					}
-				}
-				this.items.push( parser.getStub( preserveWhitespace ) );
-				next = parser.next();
-			}
-			// if we're not preserving whitespace, we can eliminate inner leading and trailing whitespace
-			if ( !preserveWhitespace ) {
-				item = this.items[ 0 ];
-				if ( item && item.type === types.TEXT ) {
-					item.text = item.text.replace( leadingWhitespace, '' );
-					if ( !item.text ) {
-						this.items.shift();
-					}
-				}
-				item = this.items[ this.items.length - 1 ];
-				if ( item && item.type === types.TEXT ) {
-					item.text = item.text.replace( trailingWhitespace, '' );
-					if ( !item.text ) {
-						this.items.pop();
-					}
-				}
-			}
-		};
-		ElementStub.prototype = {
-			toJSON: toJSON,
-			toString: toString
-		};
-		allElementNames = 'a abbr acronym address applet area b base basefont bdo big blockquote body br button caption center cite code col colgroup dd del dfn dir div dl dt em fieldset font form frame frameset h1 h2 h3 h4 h5 h6 head hr html i iframe img input ins isindex kbd label legend li link map menu meta noframes noscript object ol p param pre q s samp script select small span strike strong style sub sup textarea title tt u ul var article aside audio bdi canvas command data datagrid datalist details embed eventsource figcaption figure footer header hgroup keygen mark meter nav output progress ruby rp rt section source summary time track video wbr'.split( ' ' );
-		closedByParentClose = 'li dd rt rp optgroup option tbody tfoot tr td th'.split( ' ' );
-		onPattern = /^on[a-zA-Z]/;
-		sanitize = function( attr ) {
-			var valid = !onPattern.test( attr.name );
-			return valid;
-		};
-		return ElementStub;
-	}( config_types, config_voidElementNames, utils_warn, parse_Parser_getElement_ElementStub_utils_siblingsByTagName, parse_Parser_getElement_ElementStub_utils_filterAttributes, parse_Parser_getElement_ElementStub_utils_processDirective, parse_Parser_getElement_ElementStub_toJSON, parse_Parser_getElement_ElementStub_toString, parse_Parser_StringStub__StringStub );
-
-	var parse_Parser_getElement__getElement = function( ElementStub ) {
-
-		return function( token ) {
-			// sanitize
+			// Sanitize
 			if ( this.options.sanitize && this.options.sanitize.elements ) {
 				if ( this.options.sanitize.elements.indexOf( token.name.toLowerCase() ) !== -1 ) {
 					return null;
 				}
 			}
-			return new ElementStub( token, this, this.preserveWhitespace );
+			this.pos += 1;
+			stub = {
+				t: types.ELEMENT,
+				e: token.name
+			};
+			lowerCaseTag = stub.e.toLowerCase();
+			// if this is a <pre>/<style>/<script> element, preserve whitespace within
+			preserveWhitespace = preserveWhitespace || lowerCaseTag === 'pre' || lowerCaseTag === 'style' || lowerCaseTag === 'script';
+			if ( token.attrs ) {
+				filtered = filterAttributes( token.attrs );
+				attrs = filtered.attrs;
+				proxies = filtered.proxies;
+				// remove event attributes (e.g. onclick='doSomething()') if we're sanitizing
+				if ( this.options.sanitize && this.options.sanitize.eventAttributes ) {
+					attrs = attrs.filter( sanitize );
+				}
+				if ( attrs.length ) {
+					stub.a = getAttributeStubs( attrs );
+				}
+				// Process directives (proxy events, transitions, and decorators)
+				if ( proxies.length ) {
+					stub.v = {};
+					proxies.map( processDirective ).forEach( function( directive ) {
+						stub.v[ directive.type ] = directive.value;
+					} );
+				}
+				if ( filtered.intro ) {
+					stub.t1 = processDirective( filtered.intro ).value;
+				}
+				if ( filtered.outro ) {
+					stub.t2 = processDirective( filtered.outro ).value;
+				}
+				if ( filtered.decorator ) {
+					stub.o = processDirective( filtered.decorator ).value;
+				}
+			}
+			if ( token.doctype ) {
+				stub.y = 1;
+			}
+			// if self-closing or a void element, close
+			if ( token.selfClosing || voidElementNames.indexOf( lowerCaseTag ) !== -1 ) {
+				return stub;
+			}
+			siblings = siblingsByTagName[ lowerCaseTag ];
+			fragment = [];
+			nextToken = this.next();
+			while ( nextToken ) {
+				// section closing mustache should also close this element, e.g.
+				// <ul>{{#items}}<li>{{content}}{{/items}}</ul>
+				if ( nextToken.mustacheType === types.CLOSING ) {
+					break;
+				}
+				if ( nextToken.type === types.TAG ) {
+					// closing tag
+					if ( nextToken.closing ) {
+						// it's a closing tag, which means this element is closed...
+						if ( nextToken.name.toLowerCase() === lowerCaseTag ) {
+							this.pos += 1;
+						}
+						break;
+					} else if ( siblings && siblings.indexOf( nextToken.name.toLowerCase() ) !== -1 ) {
+						break;
+					}
+				}
+				fragment.push( this.getItem( preserveWhitespace ) );
+				nextToken = this.next();
+			}
+			if ( fragment.length ) {
+				stub.f = fragment;
+			}
+			// if we're not preserving whitespace, we can eliminate inner leading and trailing whitespace
+			// TODO tidy this up
+			if ( !preserveWhitespace && stub.f ) {
+				if ( typeof stub.f === 'string' ) {
+					stub.f = stub.f.trim();
+				} else {
+					item = stub.f[ 0 ];
+					if ( typeof item === 'string' ) {
+						stub.f[ 0 ] = item.replace( leadingWhitespace, '' );
+						if ( !stub.f[ 0 ] ) {
+							stub.f.shift();
+						}
+					}
+					item = stub.f[ stub.f.length - 1 ];
+					if ( typeof item === 'string' ) {
+						stub.f[ stub.f.length - 1 ] = item.replace( trailingWhitespace, '' );
+						if ( !stub.f[ stub.f.length - 1 ] ) {
+							stub.f.pop();
+						}
+					}
+				}
+			}
+			return stub;
 		};
-	}( parse_Parser_getElement_ElementStub__ElementStub );
 
-	var parse_Parser__Parser = function( getText, getComment, getMustache, getElement, jsonifyStubs ) {
+		function sanitize( attr ) {
+			var valid = !onPattern.test( attr.name );
+			return valid;
+		}
+	}( config_types, config_voidElementNames, parse_Parser_getElement_utils_filterAttributes, parse_Parser_getElement_utils_processDirective, parse_Parser_getElement_utils_getAttributeStubs, parse_Parser_getElement_utils_siblingsByTagName );
+
+	var parse_Parser__Parser = function( circular, getText, getComment, getMustache, getElement ) {
 
 		var Parser;
 		Parser = function( tokens, options ) {
-			var stub, stubs;
+			var item, items;
 			this.tokens = tokens || [];
 			this.pos = 0;
 			this.options = options;
 			this.preserveWhitespace = options.preserveWhitespace;
-			stubs = [];
-			while ( stub = this.getStub() ) {
-				stubs.push( stub );
+			items = [];
+			while ( item = this.getItem() ) {
+				items.push( item );
 			}
-			this.result = jsonifyStubs( stubs, options.noStringify, true );
+			this.result = items;
 		};
 		Parser.prototype = {
-			getStub: function( preserveWhitespace ) {
+			getItem: function( preserveWhitespace ) {
 				var token = this.next();
 				if ( !token ) {
 					return null;
 				}
-				return this.getText( token, this.preserveWhitespace || preserveWhitespace ) || this.getComment( token ) || this.getMustache( token ) || this.getElement( token );
+				return this.getText( token, this.preserveWhitespace || preserveWhitespace ) || this.getMustache( token ) || this.getComment( token ) || this.getElement( token );
 			},
 			getText: getText,
 			getComment: getComment,
@@ -10371,8 +9953,9 @@
 				return this.tokens[ this.pos ];
 			}
 		};
+		circular.Parser = Parser;
 		return Parser;
-	}( parse_Parser_getText__getText, parse_Parser_getComment__getComment, parse_Parser_getMustache__getMustache, parse_Parser_getElement__getElement, parse_Parser_utils_jsonifyStubs );
+	}( circular, parse_Parser_getText, parse_Parser_getComment, parse_Parser_getMustache, parse_Parser_getElement__getElement );
 
 	// Ractive.parse
 	// ===============
@@ -10399,6 +9982,7 @@
 	// * t2 - outro Transition
 	// * o - decOrator
 	// * y - is doctYpe
+	// * c - is Content (e.g. of a comment node)
 	var parse__parse = function( tokenize, types, Parser ) {
 
 		var parse, onlyWhitespace, inlinePartialStart, inlinePartialEnd, parseCompoundTemplate;
@@ -10500,11 +10084,10 @@
 
 	var render_DomFragment_Partial_getPartialDescriptor = function( errors, isClient, warn, isObject, partials, parse, deIndent ) {
 
-		var getPartialDescriptor, registerPartial, getPartialFromRegistry, unpack;
-		getPartialDescriptor = function( root, name ) {
+		return function getPartialDescriptor( ractive, name ) {
 			var el, partial, errorMessage;
 			// If the partial was specified on this instance, great
-			if ( partial = getPartialFromRegistry( root, name ) ) {
+			if ( partial = getPartialFromRegistry( ractive, name ) ) {
 				return partial;
 			}
 			// Does it exist on the page as a script tag?
@@ -10514,23 +10097,24 @@
 					if ( !parse ) {
 						throw new Error( errors.missingParser );
 					}
-					registerPartial( parse( deIndent( el.text ), root.parseOptions ), name, partials );
+					registerPartial( parse( deIndent( el.text ), ractive.parseOptions ), name, partials );
 				}
 			}
 			partial = partials[ name ];
 			// No match? Return an empty array
 			if ( !partial ) {
 				errorMessage = 'Could not find descriptor for partial "' + name + '"';
-				if ( root.debug ) {
+				if ( ractive.debug ) {
 					throw new Error( errorMessage );
 				} else {
 					warn( errorMessage );
 				}
 				return [];
 			}
-			return unpack( partial );
+			return partial;
 		};
-		getPartialFromRegistry = function( ractive, name ) {
+
+		function getPartialFromRegistry( ractive, name ) {
 			var partial;
 			if ( ractive.partials[ name ] ) {
 				// If this was added manually to the registry, but hasn't been parsed,
@@ -10542,10 +10126,11 @@
 					partial = parse( ractive.partials[ name ], ractive.parseOptions );
 					registerPartial( partial, name, ractive.partials );
 				}
-				return unpack( ractive.partials[ name ] );
+				return ractive.partials[ name ];
 			}
-		};
-		registerPartial = function( partial, name, registry ) {
+		}
+
+		function registerPartial( partial, name, registry ) {
 			var key;
 			if ( isObject( partial ) ) {
 				registry[ name ] = partial.main;
@@ -10557,15 +10142,7 @@
 			} else {
 				registry[ name ] = partial;
 			}
-		};
-		unpack = function( partial ) {
-			// Unpack string, if necessary
-			if ( partial.length === 1 && typeof partial[ 0 ] === 'string' ) {
-				return partial[ 0 ];
-			}
-			return partial;
-		};
-		return getPartialDescriptor;
+		}
 	}( config_errors, config_isClient, utils_warn, utils_isObject, registries_partials, parse__parse, render_DomFragment_Partial_deIndent );
 
 	var render_DomFragment_Partial_applyIndent = function( string, indent ) {
@@ -11008,7 +10585,7 @@
 			this.type = types.COMMENT;
 			this.descriptor = options.descriptor;
 			if ( docFrag ) {
-				this.node = document.createComment( options.descriptor.f );
+				this.node = document.createComment( options.descriptor.c );
 				docFrag.appendChild( this.node );
 			}
 		};
@@ -11023,28 +10600,20 @@
 				return this.node;
 			},
 			toString: function() {
-				return '<!--' + this.descriptor.f + '-->';
+				return '<!--' + this.descriptor.c + '-->';
 			}
 		};
 		return DomComment;
 	}( config_types, render_DomFragment_shared_detach );
 
-	var render_DomFragment__DomFragment = function( types, matches, Fragment, insertHtml, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
+	var render_DomFragment__DomFragment = function( types, matches, Fragment, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
 
 		var DomFragment = function( options ) {
 			if ( options.pNode ) {
 				this.docFrag = document.createDocumentFragment();
 			}
-			// if we have an HTML string, our job is easy.
-			if ( typeof options.descriptor === 'string' ) {
-				this.html = options.descriptor;
-				if ( this.docFrag ) {
-					this.nodes = insertHtml( this.html, options.pNode.tagName, options.pNode.namespaceURI, this.docFrag );
-				}
-			} else {
-				// otherwise we need to make a proper fragment
-				Fragment.init( this, options );
-			}
+			// otherwise we need to make a proper fragment
+			Fragment.init( this, options );
 		};
 		DomFragment.prototype = {
 			reassign: Fragment.reassign,
@@ -11087,7 +10656,7 @@
 					case types.COMMENT:
 						return new Comment( options, this.docFrag );
 					default:
-						throw new Error( 'Something very strange happened. Please file an issue at https://github.com/RactiveJS/Ractive/issues. Thanks!' );
+						throw new Error( 'Something very strange happened. Please file an issue at https://github.com/ractivejs/ractive/issues. Thanks!' );
 				}
 			},
 			teardown: function( destroy ) {
@@ -11129,20 +10698,10 @@
 				return this.owner.findNextNode( this );
 			},
 			toString: function() {
-				var html, i, len, item;
-				if ( this.html ) {
-					return this.html;
-				}
-				html = '';
 				if ( !this.items ) {
-					return html;
+					return '';
 				}
-				len = this.items.length;
-				for ( i = 0; i < len; i += 1 ) {
-					item = this.items[ i ];
-					html += item.toString();
-				}
-				return html;
+				return this.items.join( '' );
 			},
 			find: function( selector ) {
 				var i, len, item, node, queryResult;
@@ -11234,7 +10793,7 @@
 		};
 		circular.DomFragment = DomFragment;
 		return DomFragment;
-	}( config_types, utils_matches, render_shared_Fragment__Fragment, render_DomFragment_shared_insertHtml, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
+	}( config_types, utils_matches, render_shared_Fragment__Fragment, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
 
 	var Ractive_prototype_render = function( runloop, css, DomFragment ) {
 
@@ -12181,11 +11740,6 @@
 			if ( isObject( parsedTemplate ) ) {
 				fillGaps( ractive.partials, parsedTemplate.partials );
 				parsedTemplate = parsedTemplate.main;
-			}
-			// If the template was an array with a single string member, that means
-			// we can use innerHTML - we just need to unpack it
-			if ( parsedTemplate && parsedTemplate.length === 1 && typeof parsedTemplate[ 0 ] === 'string' ) {
-				parsedTemplate = parsedTemplate[ 0 ];
 			}
 			ractive.template = parsedTemplate;
 			// Add partials to our registry

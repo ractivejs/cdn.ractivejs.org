@@ -1,6 +1,6 @@
 /*
 	Ractive.js v0.4.0
-	2014-04-19 - commit f916c7cb
+	2014-04-19 - commit 80d1d558
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3711,11 +3711,6 @@
 	var render_shared_Fragment_reassign = function( assignNewKeypath ) {
 
 		return function reassignFragment( indexRef, newIndex, oldKeypath, newKeypath ) {
-			// If this fragment was rendered with innerHTML, we have nothing to do
-			// TODO a less hacky way of determining this
-			if ( this.html !== undefined ) {
-				return;
-			}
 			// assign new context keypath if needed
 			assignNewKeypath( this, 'context', oldKeypath, newKeypath );
 			if ( this.indexRefs && this.indexRefs[ indexRef ] !== undefined && this.indexRefs[ indexRef ] !== newIndex ) {
@@ -3734,65 +3729,6 @@
 			reassign: reassign
 		};
 	}( render_shared_Fragment_initialise, render_shared_Fragment_reassign );
-
-	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
-
-		var elementCache = {}, ieBug, ieBlacklist;
-		try {
-			createElement( 'table' ).innerHTML = 'foo';
-		} catch ( err ) {
-			ieBug = true;
-			ieBlacklist = {
-				TABLE: [
-					'<table class="x">',
-					'</table>'
-				],
-				THEAD: [
-					'<table><thead class="x">',
-					'</thead></table>'
-				],
-				TBODY: [
-					'<table><tbody class="x">',
-					'</tbody></table>'
-				],
-				TR: [
-					'<table><tr class="x">',
-					'</tr></table>'
-				],
-				SELECT: [
-					'<select class="x">',
-					'</select>'
-				]
-			};
-		}
-		return function( html, tagName, namespace, docFrag ) {
-			var container, nodes = [],
-				wrapper;
-			if ( html ) {
-				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
-					container = element( 'DIV' );
-					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
-					container = container.querySelector( '.x' );
-				} else if ( namespace === namespaces.svg ) {
-					container = element( 'DIV' );
-					container.innerHTML = '<svg class="x">' + html + '</svg>';
-					container = container.querySelector( '.x' );
-				} else {
-					container = element( tagName );
-					container.innerHTML = html;
-				}
-				while ( container.firstChild ) {
-					nodes.push( container.firstChild );
-					docFrag.appendChild( container.firstChild );
-				}
-			}
-			return nodes;
-		};
-
-		function element( tagName ) {
-			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
-		}
-	}( config_namespaces, utils_createElement );
 
 	var render_DomFragment_shared_detach = function() {
 		var node = this.node,
@@ -4966,6 +4902,65 @@
 		return DomSection;
 	}( config_types, render_shared_Mustache__Mustache, render_DomFragment_Section_prototype_merge, render_DomFragment_Section_prototype_render, render_DomFragment_Section_prototype_splice, shared_teardown, circular );
 
+	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
+
+		var elementCache = {}, ieBug, ieBlacklist;
+		try {
+			createElement( 'table' ).innerHTML = 'foo';
+		} catch ( err ) {
+			ieBug = true;
+			ieBlacklist = {
+				TABLE: [
+					'<table class="x">',
+					'</table>'
+				],
+				THEAD: [
+					'<table><thead class="x">',
+					'</thead></table>'
+				],
+				TBODY: [
+					'<table><tbody class="x">',
+					'</tbody></table>'
+				],
+				TR: [
+					'<table><tr class="x">',
+					'</tr></table>'
+				],
+				SELECT: [
+					'<select class="x">',
+					'</select>'
+				]
+			};
+		}
+		return function( html, tagName, namespace, docFrag ) {
+			var container, nodes = [],
+				wrapper;
+			if ( html ) {
+				if ( ieBug && ( wrapper = ieBlacklist[ tagName ] ) ) {
+					container = element( 'DIV' );
+					container.innerHTML = wrapper[ 0 ] + html + wrapper[ 1 ];
+					container = container.querySelector( '.x' );
+				} else if ( namespace === namespaces.svg ) {
+					container = element( 'DIV' );
+					container.innerHTML = '<svg class="x">' + html + '</svg>';
+					container = container.querySelector( '.x' );
+				} else {
+					container = element( tagName );
+					container.innerHTML = html;
+				}
+				while ( container.firstChild ) {
+					nodes.push( container.firstChild );
+					docFrag.appendChild( container.firstChild );
+				}
+			}
+			return nodes;
+		};
+
+		function element( tagName ) {
+			return elementCache[ tagName ] || ( elementCache[ tagName ] = createElement( tagName ) );
+		}
+	}( config_namespaces, utils_createElement );
+
 	var render_DomFragment_Triple = function( types, matches, Mustache, insertHtml, teardown ) {
 
 		var DomTriple = function( options, docFrag ) {
@@ -5140,7 +5135,7 @@
 	var render_DomFragment_Attribute_helpers_setStaticAttribute = function( namespaces ) {
 
 		return function setStaticAttribute( attribute, options ) {
-			var node, value = options.value === null ? '' : options.value;
+			var node, value = options.value || '';
 			if ( node = options.pNode ) {
 				if ( attribute.namespace ) {
 					node.setAttributeNS( attribute.namespace, options.name, value );
@@ -5161,7 +5156,7 @@
 					node._ractive.value = options.value;
 				}
 			}
-			attribute.value = options.value;
+			attribute.value = options.value || null;
 		};
 	}( config_namespaces );
 
@@ -6370,7 +6365,7 @@
 			determineNameAndNamespace( this, options.name );
 			// if it's an empty attribute, or just a straight key-value pair, with no
 			// mustache shenanigans, set the attribute accordingly and go home
-			if ( options.value === null || typeof options.value === 'string' ) {
+			if ( !options.value || typeof options.value === 'string' ) {
 				setStaticAttribute( this, options );
 				return;
 			}
@@ -6516,26 +6511,7 @@
 		};
 	}( render_DomFragment_Element_initialise_createElementAttribute );
 
-	var utils_toArray = function toArray( arrayLike ) {
-		var array = [],
-			i = arrayLike.length;
-		while ( i-- ) {
-			array[ i ] = arrayLike[ i ];
-		}
-		return array;
-	};
-
-	var render_DomFragment_Element_shared_getMatchingStaticNodes = function( toArray ) {
-
-		return function getMatchingStaticNodes( element, selector ) {
-			if ( !element.matchingStaticNodes[ selector ] ) {
-				element.matchingStaticNodes[ selector ] = toArray( element.node.querySelectorAll( selector ) );
-			}
-			return element.matchingStaticNodes[ selector ];
-		};
-	}( utils_toArray );
-
-	var render_DomFragment_Element_initialise_appendElementChildren = function( warn, namespaces, StringFragment, getMatchingStaticNodes, circular ) {
+	var render_DomFragment_Element_initialise_appendElementChildren = function( circular, warn, namespaces, StringFragment ) {
 
 		var DomFragment, updateCss, updateScript;
 		circular.push( function() {
@@ -6578,46 +6554,18 @@
 				}
 				return;
 			}
-			if ( typeof descriptor.f === 'string' && ( !node || ( !node.namespaceURI || node.namespaceURI === namespaces.html ) ) ) {
-				// great! we can use innerHTML
-				element.html = descriptor.f;
-				if ( docFrag ) {
-					node.innerHTML = element.html;
-					// Update live queries, if applicable
-					element.matchingStaticNodes = {};
-					// so we can remove matches made with querySelectorAll at teardown time
-					updateLiveQueries( element );
-				}
-			} else {
-				element.fragment = new DomFragment( {
-					descriptor: descriptor.f,
-					root: element.root,
-					pNode: node,
-					owner: element,
-					pElement: element
-				} );
-				if ( docFrag ) {
-					node.appendChild( element.fragment.docFrag );
-				}
+			element.fragment = new DomFragment( {
+				descriptor: descriptor.f,
+				root: element.root,
+				pNode: node,
+				owner: element,
+				pElement: element
+			} );
+			if ( docFrag ) {
+				node.appendChild( element.fragment.docFrag );
 			}
 		};
-
-		function updateLiveQueries( element ) {
-			var instance, liveQueries, node, selector, query, matchingStaticNodes, i;
-			node = element.node;
-			instance = element.root;
-			do {
-				liveQueries = instance._liveQueries;
-				i = liveQueries.length;
-				while ( i-- ) {
-					selector = liveQueries[ i ];
-					query = liveQueries[ '_' + selector ];
-					matchingStaticNodes = getMatchingStaticNodes( element, selector );
-					query.push.apply( query, matchingStaticNodes );
-				}
-			} while ( instance = instance._parent );
-		}
-	}( utils_warn, config_namespaces, render_StringFragment__StringFragment, render_DomFragment_Element_shared_getMatchingStaticNodes, circular );
+	}( circular, utils_warn, config_namespaces, render_StringFragment__StringFragment );
 
 	var render_DomFragment_Element_initialise_decorate_Decorator = function( warn, StringFragment ) {
 
@@ -7613,18 +7561,12 @@
 		};
 
 		function removeFromLiveQueries( element ) {
-			var query, selector, matchingStaticNodes, i, j;
+			var query, selector, i;
 			i = element.liveQueries.length;
 			while ( i-- ) {
 				query = element.liveQueries[ i ];
 				selector = query.selector;
 				query._remove( element.node );
-				if ( element.matchingStaticNodes && ( matchingStaticNodes = element.matchingStaticNodes[ selector ] ) ) {
-					j = matchingStaticNodes.length;
-					while ( j-- ) {
-						query.remove( matchingStaticNodes[ j ] );
-					}
-				}
 			}
 		}
 	}( global_runloop, render_DomFragment_Element_shared_executeTransition__executeTransition );
@@ -7706,9 +7648,7 @@
 				str += ' checked';
 			}
 			str += '>';
-			if ( this.html ) {
-				str += this.html;
-			} else if ( this.fragment ) {
+			if ( this.fragment ) {
 				str += this.fragment.toString();
 			}
 			// add a closing tag if this isn't a void element
@@ -7768,12 +7708,8 @@
 	var render_DomFragment_Element_prototype_find = function( matches ) {
 
 		return function( selector ) {
-			var queryResult;
 			if ( matches( this.node, selector ) ) {
 				return this.node;
-			}
-			if ( this.html && ( queryResult = this.node.querySelector( selector ) ) ) {
-				return queryResult;
 			}
 			if ( this.fragment && this.fragment.find ) {
 				return this.fragment.find( selector );
@@ -7781,27 +7717,16 @@
 		};
 	}( utils_matches );
 
-	var render_DomFragment_Element_prototype_findAll = function( getMatchingStaticNodes ) {
-
-		return function( selector, query ) {
-			var matchingStaticNodes, matchedSelf;
-			// Add this node to the query, if applicable, and register the
-			// query on this element
-			if ( query._test( this, true ) && query.live ) {
-				( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
-			}
-			if ( this.html ) {
-				matchingStaticNodes = getMatchingStaticNodes( this, selector );
-				query.push.apply( query, matchingStaticNodes );
-				if ( query.live && !matchedSelf ) {
-					( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
-				}
-			}
-			if ( this.fragment ) {
-				this.fragment.findAll( selector, query );
-			}
-		};
-	}( render_DomFragment_Element_shared_getMatchingStaticNodes );
+	var render_DomFragment_Element_prototype_findAll = function( selector, query ) {
+		// Add this node to the query, if applicable, and register the
+		// query on this element
+		if ( query._test( this, true ) && query.live ) {
+			( this.liveQueries || ( this.liveQueries = [] ) ).push( query );
+		}
+		if ( this.fragment ) {
+			this.fragment.findAll( selector, query );
+		}
+	};
 
 	var render_DomFragment_Element_prototype_findComponent = function( selector ) {
 		if ( this.fragment ) {
@@ -7947,11 +7872,10 @@
 
 	var render_DomFragment_Partial_getPartialDescriptor = function( errors, isClient, warn, isObject, partials, parse, deIndent ) {
 
-		var getPartialDescriptor, registerPartial, getPartialFromRegistry, unpack;
-		getPartialDescriptor = function( root, name ) {
+		return function getPartialDescriptor( ractive, name ) {
 			var el, partial, errorMessage;
 			// If the partial was specified on this instance, great
-			if ( partial = getPartialFromRegistry( root, name ) ) {
+			if ( partial = getPartialFromRegistry( ractive, name ) ) {
 				return partial;
 			}
 			// Does it exist on the page as a script tag?
@@ -7961,23 +7885,24 @@
 					if ( !parse ) {
 						throw new Error( errors.missingParser );
 					}
-					registerPartial( parse( deIndent( el.text ), root.parseOptions ), name, partials );
+					registerPartial( parse( deIndent( el.text ), ractive.parseOptions ), name, partials );
 				}
 			}
 			partial = partials[ name ];
 			// No match? Return an empty array
 			if ( !partial ) {
 				errorMessage = 'Could not find descriptor for partial "' + name + '"';
-				if ( root.debug ) {
+				if ( ractive.debug ) {
 					throw new Error( errorMessage );
 				} else {
 					warn( errorMessage );
 				}
 				return [];
 			}
-			return unpack( partial );
+			return partial;
 		};
-		getPartialFromRegistry = function( ractive, name ) {
+
+		function getPartialFromRegistry( ractive, name ) {
 			var partial;
 			if ( ractive.partials[ name ] ) {
 				// If this was added manually to the registry, but hasn't been parsed,
@@ -7989,10 +7914,11 @@
 					partial = parse( ractive.partials[ name ], ractive.parseOptions );
 					registerPartial( partial, name, ractive.partials );
 				}
-				return unpack( ractive.partials[ name ] );
+				return ractive.partials[ name ];
 			}
-		};
-		registerPartial = function( partial, name, registry ) {
+		}
+
+		function registerPartial( partial, name, registry ) {
 			var key;
 			if ( isObject( partial ) ) {
 				registry[ name ] = partial.main;
@@ -8004,15 +7930,7 @@
 			} else {
 				registry[ name ] = partial;
 			}
-		};
-		unpack = function( partial ) {
-			// Unpack string, if necessary
-			if ( partial.length === 1 && typeof partial[ 0 ] === 'string' ) {
-				return partial[ 0 ];
-			}
-			return partial;
-		};
-		return getPartialDescriptor;
+		}
 	}( config_errors, config_isClient, utils_warn, utils_isObject, registries_partials, parse__parse, render_DomFragment_Partial_deIndent );
 
 	var render_DomFragment_Partial_applyIndent = function( string, indent ) {
@@ -8455,7 +8373,7 @@
 			this.type = types.COMMENT;
 			this.descriptor = options.descriptor;
 			if ( docFrag ) {
-				this.node = document.createComment( options.descriptor.f );
+				this.node = document.createComment( options.descriptor.c );
 				docFrag.appendChild( this.node );
 			}
 		};
@@ -8470,28 +8388,20 @@
 				return this.node;
 			},
 			toString: function() {
-				return '<!--' + this.descriptor.f + '-->';
+				return '<!--' + this.descriptor.c + '-->';
 			}
 		};
 		return DomComment;
 	}( config_types, render_DomFragment_shared_detach );
 
-	var render_DomFragment__DomFragment = function( types, matches, Fragment, insertHtml, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
+	var render_DomFragment__DomFragment = function( types, matches, Fragment, Text, Interpolator, Section, Triple, Element, Partial, Component, Comment, circular ) {
 
 		var DomFragment = function( options ) {
 			if ( options.pNode ) {
 				this.docFrag = document.createDocumentFragment();
 			}
-			// if we have an HTML string, our job is easy.
-			if ( typeof options.descriptor === 'string' ) {
-				this.html = options.descriptor;
-				if ( this.docFrag ) {
-					this.nodes = insertHtml( this.html, options.pNode.tagName, options.pNode.namespaceURI, this.docFrag );
-				}
-			} else {
-				// otherwise we need to make a proper fragment
-				Fragment.init( this, options );
-			}
+			// otherwise we need to make a proper fragment
+			Fragment.init( this, options );
 		};
 		DomFragment.prototype = {
 			reassign: Fragment.reassign,
@@ -8534,7 +8444,7 @@
 					case types.COMMENT:
 						return new Comment( options, this.docFrag );
 					default:
-						throw new Error( 'Something very strange happened. Please file an issue at https://github.com/RactiveJS/Ractive/issues. Thanks!' );
+						throw new Error( 'Something very strange happened. Please file an issue at https://github.com/ractivejs/ractive/issues. Thanks!' );
 				}
 			},
 			teardown: function( destroy ) {
@@ -8576,20 +8486,10 @@
 				return this.owner.findNextNode( this );
 			},
 			toString: function() {
-				var html, i, len, item;
-				if ( this.html ) {
-					return this.html;
-				}
-				html = '';
 				if ( !this.items ) {
-					return html;
+					return '';
 				}
-				len = this.items.length;
-				for ( i = 0; i < len; i += 1 ) {
-					item = this.items[ i ];
-					html += item.toString();
-				}
-				return html;
+				return this.items.join( '' );
 			},
 			find: function( selector ) {
 				var i, len, item, node, queryResult;
@@ -8681,7 +8581,7 @@
 		};
 		circular.DomFragment = DomFragment;
 		return DomFragment;
-	}( config_types, utils_matches, render_shared_Fragment__Fragment, render_DomFragment_shared_insertHtml, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
+	}( config_types, utils_matches, render_shared_Fragment__Fragment, render_DomFragment_Text, render_DomFragment_Interpolator, render_DomFragment_Section__Section, render_DomFragment_Triple, render_DomFragment_Element__Element, render_DomFragment_Partial__Partial, render_DomFragment_Component__Component, render_DomFragment_Comment, circular );
 
 	var Ractive_prototype_render = function( runloop, css, DomFragment ) {
 
@@ -9628,11 +9528,6 @@
 			if ( isObject( parsedTemplate ) ) {
 				fillGaps( ractive.partials, parsedTemplate.partials );
 				parsedTemplate = parsedTemplate.main;
-			}
-			// If the template was an array with a single string member, that means
-			// we can use innerHTML - we just need to unpack it
-			if ( parsedTemplate && parsedTemplate.length === 1 && typeof parsedTemplate[ 0 ] === 'string' ) {
-				parsedTemplate = parsedTemplate[ 0 ];
 			}
 			ractive.template = parsedTemplate;
 			// Add partials to our registry
