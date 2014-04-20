@@ -1,6 +1,6 @@
 /*
 	ractive.js v0.4.0
-	2014-04-20 - commit 3623893b
+	2014-04-20 - commit ba412475
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -7447,7 +7447,7 @@
 			return;
 		}
 		// an element can only have one two-way attribute
-		switch ( this.descriptor.e ) {
+		switch ( this.lcName ) {
 			case 'select':
 			case 'textarea':
 				if ( attributes.value ) {
