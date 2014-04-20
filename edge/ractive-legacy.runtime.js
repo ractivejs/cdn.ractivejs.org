@@ -1,6 +1,6 @@
 /*
-	Ractive.js v0.4.0
-	2014-04-19 - commit 80d1d558
+	ractive.js v0.4.0
+	2014-04-20 - commit 3623893b
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -890,7 +890,7 @@
 			}
 			// We need both of these - the first enables components to treat data contexts
 			// like lexical scopes in JavaScript functions...
-			if ( hasOwnProperty.call( ractive.data, ref ) ) {
+			if ( hasOwnProperty.call( ractive.data, keys[ 0 ] ) ) {
 				return ref;
 			} else if ( get( ractive, ref ) !== undefined ) {
 				return ref;
@@ -4307,7 +4307,7 @@
 	var render_shared_Mustache_initialise = function( runloop, resolveRef, KeypathExpressionResolver, ExpressionResolver ) {
 
 		return function initMustache( mustache, options ) {
-			var ref, keypath, indexRefs, index, parentFragment, descriptor, resolve;
+			var ref, indexRefs, index, parentFragment, descriptor;
 			parentFragment = options.parentFragment;
 			descriptor = options.descriptor;
 			mustache.root = parentFragment.root;
@@ -4316,9 +4316,20 @@
 			mustache.index = options.index || 0;
 			mustache.priority = parentFragment.priority;
 			mustache.type = options.descriptor.t;
-			resolve = function( keypath ) {
+
+			function resolve( keypath ) {
 				mustache.resolve( keypath );
-			};
+			}
+
+			function resolveWithRef( ref ) {
+				var keypath = resolveRef( mustache.root, ref, mustache.parentFragment );
+				if ( keypath !== undefined ) {
+					resolve( keypath );
+				} else {
+					mustache.ref = ref;
+					runloop.addUnresolved( mustache );
+				}
+			}
 			// if this is a simple mustache, with a reference, we just need to resolve
 			// the reference to a keypath
 			if ( ref = descriptor.r ) {
@@ -4328,13 +4339,7 @@
 					mustache.value = index;
 					mustache.render( mustache.value );
 				} else {
-					keypath = resolveRef( mustache.root, ref, mustache.parentFragment );
-					if ( keypath !== undefined ) {
-						resolve( keypath );
-					} else {
-						mustache.ref = ref;
-						runloop.addUnresolved( mustache );
-					}
+					resolveWithRef( ref );
 				}
 			}
 			// if it's an expression, we have a bit more work to do
@@ -4342,7 +4347,7 @@
 				mustache.resolver = new ExpressionResolver( mustache, parentFragment, options.descriptor.x, resolve );
 			}
 			if ( options.descriptor.kx ) {
-				mustache.resolver = new KeypathExpressionResolver( mustache, options.descriptor.kx, resolve );
+				mustache.resolver = new KeypathExpressionResolver( mustache, options.descriptor.kx, resolveWithRef );
 			}
 			// Special case - inverted sections
 			if ( mustache.descriptor.n && !mustache.hasOwnProperty( 'value' ) ) {
@@ -4401,7 +4406,9 @@
 			// expression mustache?
 			if ( this.resolver ) {
 				this.resolver.reassign( indexRef, newIndex, oldKeypath, newKeypath );
-			} else if ( this.keypath ) {
+			}
+			// normal keypath mustache or keypath expression?
+			if ( this.keypath ) {
 				updated = getNewKeypath( this.keypath, oldKeypath, newKeypath );
 				// was a new keypath created?
 				if ( updated ) {
@@ -7383,7 +7390,7 @@
 			parentFragment = element.parentFragment = options.parentFragment;
 			pNode = parentFragment.pNode;
 			descriptor = element.descriptor = options.descriptor;
-			element.parent = options.pElement;
+			element.parent = options.pElement || parentFragment.pElement;
 			element.root = root = parentFragment.root;
 			element.index = options.index;
 			element.lcName = descriptor.e.toLowerCase();
