@@ -1,6 +1,6 @@
 /*
 	ractive.js v0.4.0
-	2014-04-20 - commit ba412475
+	2014-04-22 - commit 6d546ea8
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -9962,8 +9962,7 @@
 
 		var onlyWhitespace = /^\s*$/;
 		return function( component, defaultData, attributes, toBind ) {
-			var data, key, value;
-			data = {};
+			var data = {}, key, value;
 			// some parameters, e.g. foo="The value is {{bar}}", are 'complex' - in
 			// other words, we need to construct a string fragment to watch
 			// when they change. We store these so they can be torn down later
@@ -10542,11 +10541,395 @@
 		};
 	}( utils_warn );
 
-	var Ractive_prototype_reset = function( Promise, runloop, clearCache, notifyDependants ) {
+	var config_registries = [ ,
+		'data',
+		'computed',
+		'adaptors',
+		'components',
+		'decorators',
+		'easing',
+		'events',
+		'interpolators',
+		'partials',
+		'transitions'
+	];
 
+	var utils_extend = function( target ) {
+		var prop, source, sources = Array.prototype.slice.call( arguments, 1 );
+		while ( source = sources.shift() ) {
+			for ( prop in source ) {
+				if ( source.hasOwnProperty( prop ) ) {
+					target[ prop ] = source[ prop ];
+				}
+			}
+		}
+		return target;
+	};
+
+	var Ractive_initialise_computations_getComputationSignature = function() {
+
+		var pattern = /\$\{([^\}]+)\}/g;
+		return function( signature ) {
+			if ( typeof signature === 'function' ) {
+				return {
+					get: signature
+				};
+			}
+			if ( typeof signature === 'string' ) {
+				return {
+					get: createFunctionFromString( signature )
+				};
+			}
+			if ( typeof signature === 'object' && typeof signature.get === 'string' ) {
+				signature = {
+					get: createFunctionFromString( signature.get ),
+					set: signature.set
+				};
+			}
+			return signature;
+		};
+
+		function createFunctionFromString( signature ) {
+			var functionBody = 'var __ractive=this;return(' + signature.replace( pattern, function( match, keypath ) {
+				return '__ractive.get("' + keypath + '")';
+			} ) + ')';
+			return new Function( functionBody );
+		}
+	}();
+
+	var Ractive_initialise_computations_Watcher = function( isEqual, registerDependant, unregisterDependant ) {
+
+		var Watcher = function( computation, keypath ) {
+			this.root = computation.ractive;
+			this.keypath = keypath;
+			this.priority = 0;
+			this.computation = computation;
+			registerDependant( this );
+		};
+		Watcher.prototype = {
+			update: function() {
+				var value;
+				value = this.root.get( this.keypath );
+				if ( !isEqual( value, this.value ) ) {
+					this.computation.bubble();
+				}
+			},
+			teardown: function() {
+				unregisterDependant( this );
+			}
+		};
+		return Watcher;
+	}( utils_isEqual, shared_registerDependant, shared_unregisterDependant );
+
+	var Ractive_initialise_computations_Computation = function( warn, runloop, set, Watcher ) {
+
+		var Computation = function( ractive, key, signature ) {
+			this.ractive = ractive;
+			this.key = key;
+			this.getter = signature.get;
+			this.setter = signature.set;
+			this.watchers = [];
+			this.update();
+		};
+		Computation.prototype = {
+			set: function( value ) {
+				if ( this.setting ) {
+					this.value = value;
+					return;
+				}
+				if ( !this.setter ) {
+					throw new Error( 'Computed properties without setters are read-only in the current version' );
+				}
+				this.setter.call( this.ractive, value );
+			},
+			update: function() {
+				var ractive, originalCaptured, result, errored;
+				ractive = this.ractive;
+				originalCaptured = ractive._captured;
+				if ( !originalCaptured ) {
+					ractive._captured = [];
+				}
+				try {
+					result = this.getter.call( ractive );
+				} catch ( err ) {
+					if ( ractive.debug ) {
+						warn( 'Failed to compute "' + this.key + '": ' + err.message || err );
+					}
+					errored = true;
+				}
+				diff( this, this.watchers, ractive._captured );
+				// reset
+				ractive._captured = originalCaptured;
+				if ( !errored ) {
+					this.setting = true;
+					this.value = result;
+					set( ractive, this.key, result );
+					this.setting = false;
+				}
+				this.deferred = false;
+			},
+			bubble: function() {
+				if ( this.watchers.length <= 1 ) {
+					this.update();
+				} else if ( !this.deferred ) {
+					runloop.addComputation( this );
+					this.deferred = true;
+				}
+			}
+		};
+
+		function diff( computation, watchers, newDependencies ) {
+			var i, watcher, keypath;
+			// remove dependencies that are no longer used
+			i = watchers.length;
+			while ( i-- ) {
+				watcher = watchers[ i ];
+				if ( !newDependencies[ watcher.keypath ] ) {
+					watchers.splice( i, 1 );
+					watchers[ watcher.keypath ] = null;
+					watcher.teardown();
+				}
+			}
+			// create references for any new dependencies
+			i = newDependencies.length;
+			while ( i-- ) {
+				keypath = newDependencies[ i ];
+				if ( !watchers[ keypath ] ) {
+					watcher = new Watcher( computation, keypath );
+					watchers.push( watchers[ keypath ] = watcher );
+				}
+			}
+		}
+		return Computation;
+	}( utils_warn, global_runloop, shared_set, Ractive_initialise_computations_Watcher );
+
+	var Ractive_initialise_computations_createComputations = function( getComputationSignature, Computation ) {
+
+		return function createComputations( ractive, computed ) {
+			var key, signature;
+			for ( key in computed ) {
+				signature = getComputationSignature( computed[ key ] );
+				ractive._computations[ key ] = new Computation( ractive, key, signature );
+			}
+		};
+	}( Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
+
+	var Ractive_initialise_templateParser = function( errors, isClient, parse ) {
+
+		return function( options ) {
+			return {
+				fromId: function( id ) {
+					var template;
+					if ( !isClient ) {
+						throw new Error( 'Cannot retieve template #' + id + 'as Ractive is not running in the client.' );
+					}
+					if ( id.charAt( 0 ) === '#' ) {
+						id = id.substring( 1 );
+					}
+					if ( !( template = document.getElementById( id ) ) ) {
+						throw new Error( 'Could not find template element with id #' + id );
+					}
+					return template.innerHTML;
+				},
+				parse: function( template, parseOptions ) {
+					if ( !parse ) {
+						throw new Error( errors.missingParser );
+					}
+					return parse( template, parseOptions || options );
+				},
+				isParsed: function( template ) {
+					return !( typeof template === 'string' );
+				}
+			};
+		};
+	}( config_errors, config_isClient, parse__parse );
+
+	var Ractive_initialise_initialiseTemplate = function( isClient, extend, fillGaps, isObject, TemplateParser ) {
+
+		return function( ractive, defaults, options ) {
+			var template = ractive.template,
+				templateParser, parsedTemplate;
+			templateParser = new TemplateParser( ractive.parseOptions );
+			// Parse template, if necessary
+			if ( !templateParser.isParsed( template ) ) {
+				// Assume this is an ID of a <script type='text/ractive'> tag
+				if ( template.charAt( 0 ) === '#' ) {
+					template = templateParser.fromId( template );
+				}
+				parsedTemplate = templateParser.parse( template );
+			} else {
+				parsedTemplate = template;
+			}
+			// deal with compound template
+			if ( isObject( parsedTemplate ) ) {
+				fillGaps( ractive.partials, parsedTemplate.partials );
+				parsedTemplate = parsedTemplate.main;
+			}
+			// If the template was an array with a single string member, that means
+			// we can use innerHTML - we just need to unpack it
+			if ( parsedTemplate && parsedTemplate.length === 1 && typeof parsedTemplate[ 0 ] === 'string' ) {
+				parsedTemplate = parsedTemplate[ 0 ];
+			}
+			ractive.template = parsedTemplate;
+			// Add partials to our registry
+			extend( ractive.partials, options.partials );
+		};
+	}( config_isClient, utils_extend, utils_fillGaps, utils_isObject, Ractive_initialise_templateParser );
+
+	var Ractive_initialise_initialiseRegistries = function( registries, create, extend, isArray, isObject, createComputations, initialiseTemplate, TemplateParser ) {
+
+		//Template is NOT in registryKeys, it doesn't extend b/c it's a string. 
+		//We're just reusing the logic as it is mostly like a registry
+		registries = registries.concat( [ 'template' ] );
+		return initialiseRegisties;
+		//Encapsulate differences between template and other registries
+		function getExtendOptions( ractive, options ) {
+			var templateParser;
+			return {
+				default: {
+					getArg: function() {
+						return;
+					},
+					extend: function( defaultValue, optionsValue ) {
+						return extend( create( defaultValue ), optionsValue );
+					},
+					initialValue: function( registry ) {
+						return ractive[ registry ];
+					}
+				},
+				template: {
+					getArg: function() {
+						if ( !templateParser ) {
+							templateParser = new TemplateParser( ractive.parseOptions );
+						}
+						return templateParser;
+					},
+					extend: function( defaultValue, optionsValue ) {
+						return optionsValue;
+					},
+					initialValue: function( registry ) {
+						return options[ registry ];
+					}
+				}
+			};
+		}
+
+		function initialiseRegisties( ractive, defaults, options, initOptions ) {
+			var extendOptions = getExtendOptions( ractive, options ),
+				registryKeys, changes;
+			initOptions = initOptions || {};
+			initOptions.newValues = initOptions.newValues || {};
+			if ( initOptions.registries ) {
+				registryKeys = initOptions.registries.filter( function( key ) {
+					return registries.indexOf( key ) > -1;
+				} );
+			} else {
+				registryKeys = registries;
+			}
+			changes = initialise();
+			if ( shouldUpdate( 'computed' ) ) {
+				createComputations( ractive, ractive.computed );
+			}
+			if ( shouldUpdate( 'template' ) ) {
+				initialiseTemplate( ractive, defaults, options );
+			}
+			return changes;
+
+			function shouldUpdate( registry ) {
+				return !initOptions.updatesOnly && ractive[ registry ] || initOptions.updatesOnly && changes.indexOf( registry ) > -1;
+			}
+
+			function initialise() {
+				//data goes first as it is primary argument to other function-based registry options
+				initialiseRegistry( 'data' );
+				if ( !ractive.data ) {
+					ractive.data = {};
+				}
+				//return the changed registries
+				return registryKeys.filter( function( registry ) {
+					return registry !== 'data';
+				} ).filter( initialiseRegistry );
+			}
+
+			function initialiseRegistry( registry ) {
+				var optionsValue = initOptions.newValues[ registry ] || options[ registry ],
+					defaultValue = ractive.constructor[ registry ] || defaults[ registry ],
+					firstArg = registry === 'data' ? optionsValue : ractive.data,
+					regOpt = extendOptions[ registry ] || extendOptions.
+				default, initialValue = regOpt.initialValue( registry );
+				if ( typeof optionsValue === 'function' ) {
+					ractive[ registry ] = optionsValue( firstArg, options, regOpt.getArg() );
+				} else if ( defaultValue ) {
+					ractive[ registry ] = typeof defaultValue === 'function' ? defaultValue( firstArg, options, regOpt.getArg() ) || options[ registry ] : regOpt.extend( defaultValue, optionsValue );
+				} else if ( optionsValue ) {
+					ractive[ registry ] = optionsValue;
+				} else {
+					ractive[ registry ] = void 0;
+				}
+				return isChanged( ractive[ registry ], initialValue );
+			}
+
+			function isChanged( initial, current ) {
+				if ( !initial && !current ) {
+					return false;
+				}
+				if ( isEmptyObject( initial ) && isEmptyObject( current ) ) {
+					return false;
+				}
+				if ( isEmptyArray( initial ) && isEmptyArray( current ) ) {
+					return false;
+				}
+				return initial !== current;
+			}
+
+			function isEmptyObject( obj ) {
+				return isObject( obj ) && !Object.keys( obj ).length;
+			}
+
+			function isEmptyArray( arr ) {
+				return isArray( arr ) && !arr.length;
+			}
+		}
+	}( config_registries, utils_create, utils_extend, utils_isArray, utils_isObject, Ractive_initialise_computations_createComputations, Ractive_initialise_initialiseTemplate, Ractive_initialise_templateParser );
+
+	var Ractive_initialise_renderInstance = function( isClient, Promise ) {
+
+		return function renderInstance( ractive, options ) {
+			var promise, fulfilPromise;
+			// Temporarily disable transitions, if noIntro flag is set
+			ractive.transitionsEnabled = options.noIntro ? false : options.transitionsEnabled;
+			// If we're in a browser, and no element has been specified, create
+			// a document fragment to use instead
+			if ( isClient && !ractive.el ) {
+				ractive.el = document.createDocumentFragment();
+			} else if ( ractive.el && !options.append ) {
+				ractive.el.innerHTML = '';
+			}
+			promise = new Promise( function( fulfil ) {
+				fulfilPromise = fulfil;
+			} );
+			ractive.render( ractive.el, fulfilPromise );
+			if ( options.complete ) {
+				promise = promise.then( options.complete.bind( ractive ) );
+			}
+			// reset transitionsEnabled
+			ractive.transitionsEnabled = options.transitionsEnabled;
+			return promise;
+		};
+	}( config_isClient, utils_Promise );
+
+	var Ractive_prototype_reset = function( Promise, runloop, clearCache, notifyDependants, initialiseRegistries, renderInstance ) {
+
+		var shouldRerender = [
+			'template',
+			'partials',
+			'components',
+			'decorators',
+			'events'
+		].join();
 		return function( data, callback ) {
-			var promise, fulfilPromise, wrapper;
-			if ( typeof data === 'function' ) {
+			var promise, fulfilPromise, wrapper, changes, rerender, i;
+			if ( typeof data === 'function' && !callback ) {
 				callback = data;
 				data = {};
 			} else {
@@ -10555,13 +10938,6 @@
 			if ( typeof data !== 'object' ) {
 				throw new Error( 'The reset method takes either no arguments, or an object containing new data' );
 			}
-			promise = new Promise( function( fulfil ) {
-				fulfilPromise = fulfil;
-			} );
-			if ( callback ) {
-				promise.then( callback );
-			}
-			runloop.start( this, fulfilPromise );
 			// If the root object is wrapped, try and use the wrapper's reset value
 			if ( ( wrapper = this._wrapped[ '' ] ) && wrapper.reset ) {
 				if ( wrapper.reset( data ) === false ) {
@@ -10571,13 +10947,75 @@
 			} else {
 				this.data = data;
 			}
-			clearCache( this, '' );
-			notifyDependants( this, '' );
-			runloop.end();
-			this.fire( 'reset', data );
+			this.initOptions.data = this.data;
+			changes = initialiseRegistries( this, this.constructor.defaults, this.initOptions, {
+				updatesOnly: true
+			} );
+			i = changes.length;
+			while ( i-- ) {
+				if ( shouldRerender.indexOf( changes[ i ] > -1 ) ) {
+					rerender = true;
+					break;
+				}
+			}
+			if ( rerender ) {
+				this.teardown();
+				this._initing = true;
+				promise = renderInstance( this, this.initOptions );
+				//same as initialise, but should this be in then()?
+				this._initing = false;
+			} else {
+				promise = new Promise( function( fulfil ) {
+					fulfilPromise = fulfil;
+				} );
+				runloop.start( this, fulfilPromise );
+				clearCache( this, '' );
+				notifyDependants( this, '' );
+				runloop.end();
+				this.fire( 'reset', data );
+			}
+			if ( callback ) {
+				promise.then( callback );
+			}
 			return promise;
 		};
-	}( utils_Promise, global_runloop, shared_clearCache, shared_notifyDependants );
+	}( utils_Promise, global_runloop, shared_clearCache, shared_notifyDependants, Ractive_initialise_initialiseRegistries, Ractive_initialise_renderInstance );
+
+	var Ractive_prototype_resetTemplate = function( Promise, initialiseRegistries, renderInstance ) {
+
+		return function( template, callback ) {
+			var promise, changes, options = {
+					updatesOnly: true,
+					registries: [
+						'template',
+						'partials'
+					]
+				};
+			if ( typeof template === 'function' && !callback ) {
+				callback = template;
+				template = void 0;
+			}
+			if ( template ) {
+				options.newValues = {
+					template: template
+				};
+			}
+			changes = initialiseRegistries( this, this.constructor.defaults, this.initOptions, options );
+			if ( changes.length ) {
+				this.teardown();
+				this._initing = true;
+				promise = renderInstance( this, this.initOptions );
+				//same as initialise, but should this be in then()?
+				this._initing = false;
+			} else {
+				promise = Promise.resolve();
+			}
+			if ( callback ) {
+				promise.then( callback );
+			}
+			return promise;
+		};
+	}( utils_Promise, Ractive_initialise_initialiseRegistries, Ractive_initialise_renderInstance );
 
 	var Ractive_prototype_set = function( runloop, isObject, normaliseKeypath, Promise, set ) {
 
@@ -10784,7 +11222,7 @@
 		}
 	}( shared_getValueFromCheckboxes, utils_arrayContentsMatch, utils_isEqual );
 
-	var Ractive_prototype__prototype = function( add, animate, detach, find, findAll, findAllComponents, findComponent, fire, get, insert, merge, observe, off, on, render, renderHTML, reset, set, subtract, teardown, toHTML, toggle, update, updateModel ) {
+	var Ractive_prototype__prototype = function( add, animate, detach, find, findAll, findAllComponents, findComponent, fire, get, insert, merge, observe, off, on, render, renderHTML, reset, resetTemplate, set, subtract, teardown, toHTML, toggle, update, updateModel ) {
 
 		return {
 			add: add,
@@ -10804,6 +11242,7 @@
 			render: render,
 			renderHTML: renderHTML,
 			reset: reset,
+			resetTemplate: resetTemplate,
 			set: set,
 			subtract: subtract,
 			teardown: teardown,
@@ -10812,7 +11251,7 @@
 			update: update,
 			updateModel: updateModel
 		};
-	}( Ractive_prototype_add, Ractive_prototype_animate__animate, Ractive_prototype_detach, Ractive_prototype_find, Ractive_prototype_findAll, Ractive_prototype_findAllComponents, Ractive_prototype_findComponent, Ractive_prototype_fire, Ractive_prototype_get, Ractive_prototype_insert, Ractive_prototype_merge__merge, Ractive_prototype_observe__observe, Ractive_prototype_off, Ractive_prototype_on, Ractive_prototype_render, Ractive_prototype_renderHTML, Ractive_prototype_reset, Ractive_prototype_set, Ractive_prototype_subtract, Ractive_prototype_teardown, Ractive_prototype_toHTML, Ractive_prototype_toggle, Ractive_prototype_update, Ractive_prototype_updateModel );
+	}( Ractive_prototype_add, Ractive_prototype_animate__animate, Ractive_prototype_detach, Ractive_prototype_find, Ractive_prototype_findAll, Ractive_prototype_findAllComponents, Ractive_prototype_findComponent, Ractive_prototype_fire, Ractive_prototype_get, Ractive_prototype_insert, Ractive_prototype_merge__merge, Ractive_prototype_observe__observe, Ractive_prototype_off, Ractive_prototype_on, Ractive_prototype_render, Ractive_prototype_renderHTML, Ractive_prototype_reset, Ractive_prototype_resetTemplate, Ractive_prototype_set, Ractive_prototype_subtract, Ractive_prototype_teardown, Ractive_prototype_toHTML, Ractive_prototype_toggle, Ractive_prototype_update, Ractive_prototype_updateModel );
 
 	var registries_components = {};
 
@@ -10862,30 +11301,6 @@
 			return v.toString( 16 );
 		} );
 	};
-
-	var utils_extend = function( target ) {
-		var prop, source, sources = Array.prototype.slice.call( arguments, 1 );
-		while ( source = sources.shift() ) {
-			for ( prop in source ) {
-				if ( source.hasOwnProperty( prop ) ) {
-					target[ prop ] = source[ prop ];
-				}
-			}
-		}
-		return target;
-	};
-
-	var config_registries = [
-		'adaptors',
-		'components',
-		'decorators',
-		'easing',
-		'events',
-		'interpolators',
-		'partials',
-		'transitions',
-		'data'
-	];
 
 	var extend_utils_transformCss = function() {
 
@@ -11100,155 +11515,7 @@
 		};
 	}( config_errors, parse__parse );
 
-	var Ractive_initialise_computations_getComputationSignature = function() {
-
-		var pattern = /\$\{([^\}]+)\}/g;
-		return function( signature ) {
-			if ( typeof signature === 'function' ) {
-				return {
-					get: signature
-				};
-			}
-			if ( typeof signature === 'string' ) {
-				return {
-					get: createFunctionFromString( signature )
-				};
-			}
-			if ( typeof signature === 'object' && typeof signature.get === 'string' ) {
-				signature = {
-					get: createFunctionFromString( signature.get ),
-					set: signature.set
-				};
-			}
-			return signature;
-		};
-
-		function createFunctionFromString( signature ) {
-			var functionBody = 'var __ractive=this;return(' + signature.replace( pattern, function( match, keypath ) {
-				return '__ractive.get("' + keypath + '")';
-			} ) + ')';
-			return new Function( functionBody );
-		}
-	}();
-
-	var Ractive_initialise_computations_Watcher = function( isEqual, registerDependant, unregisterDependant ) {
-
-		var Watcher = function( computation, keypath ) {
-			this.root = computation.ractive;
-			this.keypath = keypath;
-			this.priority = 0;
-			this.computation = computation;
-			registerDependant( this );
-		};
-		Watcher.prototype = {
-			update: function() {
-				var value;
-				value = this.root.get( this.keypath );
-				if ( !isEqual( value, this.value ) ) {
-					this.computation.bubble();
-				}
-			},
-			teardown: function() {
-				unregisterDependant( this );
-			}
-		};
-		return Watcher;
-	}( utils_isEqual, shared_registerDependant, shared_unregisterDependant );
-
-	var Ractive_initialise_computations_Computation = function( warn, runloop, set, Watcher ) {
-
-		var Computation = function( ractive, key, signature ) {
-			this.ractive = ractive;
-			this.key = key;
-			this.getter = signature.get;
-			this.setter = signature.set;
-			this.watchers = [];
-			this.update();
-		};
-		Computation.prototype = {
-			set: function( value ) {
-				if ( this.setting ) {
-					this.value = value;
-					return;
-				}
-				if ( !this.setter ) {
-					throw new Error( 'Computed properties without setters are read-only in the current version' );
-				}
-				this.setter.call( this.ractive, value );
-			},
-			update: function() {
-				var ractive, originalCaptured, result, errored;
-				ractive = this.ractive;
-				originalCaptured = ractive._captured;
-				if ( !originalCaptured ) {
-					ractive._captured = [];
-				}
-				try {
-					result = this.getter.call( ractive );
-				} catch ( err ) {
-					if ( ractive.debug ) {
-						warn( 'Failed to compute "' + this.key + '": ' + err.message || err );
-					}
-					errored = true;
-				}
-				diff( this, this.watchers, ractive._captured );
-				// reset
-				ractive._captured = originalCaptured;
-				if ( !errored ) {
-					this.setting = true;
-					this.value = result;
-					set( ractive, this.key, result );
-					this.setting = false;
-				}
-				this.deferred = false;
-			},
-			bubble: function() {
-				if ( this.watchers.length <= 1 ) {
-					this.update();
-				} else if ( !this.deferred ) {
-					runloop.addComputation( this );
-					this.deferred = true;
-				}
-			}
-		};
-
-		function diff( computation, watchers, newDependencies ) {
-			var i, watcher, keypath;
-			// remove dependencies that are no longer used
-			i = watchers.length;
-			while ( i-- ) {
-				watcher = watchers[ i ];
-				if ( !newDependencies[ watcher.keypath ] ) {
-					watchers.splice( i, 1 );
-					watchers[ watcher.keypath ] = null;
-					watcher.teardown();
-				}
-			}
-			// create references for any new dependencies
-			i = newDependencies.length;
-			while ( i-- ) {
-				keypath = newDependencies[ i ];
-				if ( !watchers[ keypath ] ) {
-					watcher = new Watcher( computation, keypath );
-					watchers.push( watchers[ keypath ] = watcher );
-				}
-			}
-		}
-		return Computation;
-	}( utils_warn, global_runloop, shared_set, Ractive_initialise_computations_Watcher );
-
-	var Ractive_initialise_computations_createComputations = function( getComputationSignature, Computation ) {
-
-		return function createComputations( ractive, computed ) {
-			var key, signature;
-			for ( key in computed ) {
-				signature = getComputationSignature( computed[ key ] );
-				ractive._computations[ key ] = new Computation( ractive, key, signature );
-			}
-		};
-	}( Ractive_initialise_computations_getComputationSignature, Ractive_initialise_computations_Computation );
-
-	var Ractive_initialise = function( isClient, errors, initOptions, registries, warn, create, extend, fillGaps, defineProperties, getElement, isObject, isArray, getGuid, Promise, magicAdaptor, parse, createComputations ) {
+	var Ractive_initialise = function( initOptions, warn, create, extend, defineProperties, getElement, isArray, getGuid, magicAdaptor, initialiseRegistries, renderInstance ) {
 
 		var flags = [
 			'adapt',
@@ -11260,21 +11527,27 @@
 			'isolated'
 		];
 		return function initialiseRactiveInstance( ractive, options ) {
-			var defaults, template, templateEl, parsedTemplate, promise, fulfilPromise, computed;
-			if ( isArray( options.adaptors ) ) {
-				warn( 'The `adaptors` option, to indicate which adaptors should be used with a given Ractive instance, has been deprecated in favour of `adapt`. See [TODO] for more information' );
-				options.adapt = options.adaptors;
-				delete options.adaptors;
-			}
-			// Options
-			// -------
-			defaults = ractive.constructor.defaults;
+			var defaults = ractive.constructor.defaults;
+			//allow empty constructor options and save for reset
+			ractive.initOptions = options = options || {};
+			setOptionsAndFlags( ractive, defaults, options );
+			//sets ._initing = true
+			initialiseProperties( ractive, options );
+			initialiseRegistries( ractive, defaults, options );
+			renderInstance( ractive, options );
+			// end init sequence
+			ractive._initing = false;
+		};
+
+		function setOptionsAndFlags( ractive, defaults, options ) {
+			deprecate( defaults );
+			deprecate( options );
 			initOptions.keys.forEach( function( key ) {
 				if ( options[ key ] === undefined ) {
 					options[ key ] = defaults[ key ];
 				}
 			} );
-			// options
+			// flag options
 			flags.forEach( function( flag ) {
 				ractive[ flag ] = options[ flag ];
 			} );
@@ -11282,11 +11555,35 @@
 			if ( typeof ractive.adapt === 'string' ) {
 				ractive.adapt = [ ractive.adapt ];
 			}
+			validate( ractive, options );
+		}
+
+		function deprecate( options ) {
+			if ( isArray( options.adaptors ) ) {
+				warn( 'The `adaptors` option, to indicate which adaptors should be used with a given Ractive instance, has been deprecated in favour of `adapt`. See [TODO] for more information' );
+				options.adapt = options.adaptors;
+				delete options.adaptors;
+			}
+			if ( options.eventDefinitions ) {
+				// TODO remove support
+				warn( 'ractive.eventDefinitions has been deprecated in favour of ractive.events. Support will be removed in future versions' );
+				options.events = options.eventDefinitions;
+			}
+		}
+
+		function validate( ractive, options ) {
 			if ( ractive.magic && !magicAdaptor ) {
 				throw new Error( 'Getters and setters (magic mode) are not supported in this browser' );
 			}
-			// Initialisation
-			// --------------
+			if ( options.el ) {
+				ractive.el = getElement( options.el );
+				if ( !ractive.el && ractive.debug ) {
+					throw new Error( 'Could not find container element' );
+				}
+			}
+		}
+
+		function initialiseProperties( ractive, options ) {
 			// We use Object.defineProperties (where possible) as these should be read-only
 			defineProperties( ractive, {
 				_initing: {
@@ -11365,6 +11662,14 @@
 					value: []
 				}
 			} );
+			//Save parse specific options
+			ractive.parseOptions = {
+				preserveWhitespace: options.preserveWhitespace,
+				sanitize: options.sanitize,
+				stripComments: options.stripComments,
+				delimiters: options.delimiters,
+				tripleDelimiters: options.tripleDelimiters
+			};
 			// If this is a component, store a reference to the parent
 			if ( options._parent && options._component ) {
 				defineProperties( ractive, {
@@ -11378,93 +11683,8 @@
 				// And store a reference to the instance on the component
 				options._component.instance = ractive;
 			}
-			if ( options.el ) {
-				ractive.el = getElement( options.el );
-				if ( !ractive.el && ractive.debug ) {
-					throw new Error( 'Could not find container element' );
-				}
-			}
-			// Create local registry objects, with the global registries as prototypes
-			if ( options.eventDefinitions ) {
-				// TODO remove support
-				warn( 'ractive.eventDefinitions has been deprecated in favour of ractive.events. Support will be removed in future versions' );
-				options.events = options.eventDefinitions;
-			}
-			registries.forEach( function( registry ) {
-				if ( ractive.constructor[ registry ] ) {
-					ractive[ registry ] = extend( create( ractive.constructor[ registry ] ), options[ registry ] );
-				} else if ( options[ registry ] ) {
-					ractive[ registry ] = options[ registry ];
-				}
-			} );
-			// Special case
-			if ( !ractive.data ) {
-				ractive.data = {};
-			}
-			// Set up any computed values
-			computed = defaults.computed ? extend( create( defaults.computed ), options.computed ) : options.computed;
-			if ( computed ) {
-				createComputations( ractive, computed );
-			}
-			// Parse template, if necessary
-			template = options.template;
-			if ( typeof template === 'string' ) {
-				if ( !parse ) {
-					throw new Error( errors.missingParser );
-				}
-				if ( template.charAt( 0 ) === '#' && isClient ) {
-					// assume this is an ID of a <script type='text/ractive'> tag
-					templateEl = document.getElementById( template.substring( 1 ) );
-					if ( templateEl ) {
-						parsedTemplate = parse( templateEl.innerHTML, options );
-					} else {
-						throw new Error( 'Could not find template element (' + template + ')' );
-					}
-				} else {
-					parsedTemplate = parse( template, options );
-				}
-			} else {
-				parsedTemplate = template;
-			}
-			// deal with compound template
-			if ( isObject( parsedTemplate ) ) {
-				fillGaps( ractive.partials, parsedTemplate.partials );
-				parsedTemplate = parsedTemplate.main;
-			}
-			ractive.template = parsedTemplate;
-			// Add partials to our registry
-			extend( ractive.partials, options.partials );
-			ractive.parseOptions = {
-				preserveWhitespace: options.preserveWhitespace,
-				sanitize: options.sanitize,
-				stripComments: options.stripComments,
-				delimiters: options.delimiters,
-				tripleDelimiters: options.tripleDelimiters
-			};
-			// Temporarily disable transitions, if noIntro flag is set
-			ractive.transitionsEnabled = options.noIntro ? false : options.transitionsEnabled;
-			// If we're in a browser, and no element has been specified, create
-			// a document fragment to use instead
-			if ( isClient && !ractive.el ) {
-				ractive.el = document.createDocumentFragment();
-			}
-			// If the target contains content, and `append` is falsy, clear it
-			if ( ractive.el && !options.append ) {
-				ractive.el.innerHTML = '';
-			}
-			promise = new Promise( function( fulfil ) {
-				fulfilPromise = fulfil;
-			} );
-			ractive.render( ractive.el, fulfilPromise );
-			if ( options.complete ) {
-				promise.then( options.complete.bind( ractive ) );
-			}
-			// reset transitionsEnabled
-			ractive.transitionsEnabled = options.transitionsEnabled;
-			// end init sequence
-			ractive._initing = false;
-		};
-	}( config_isClient, config_errors, config_initOptions, config_registries, utils_warn, utils_create, utils_extend, utils_fillGaps, utils_defineProperties, utils_getElement, utils_isObject, utils_isArray, utils_getGuid, utils_Promise, shared_get_magicAdaptor, parse__parse, Ractive_initialise_computations_createComputations );
+		}
+	}( config_initOptions, utils_warn, utils_create, utils_extend, utils_defineProperties, utils_getElement, utils_isArray, utils_getGuid, shared_get_magicAdaptor, Ractive_initialise_initialiseRegistries, Ractive_initialise_renderInstance );
 
 	var extend_initChildInstance = function( initOptions, wrapMethod, initialise ) {
 
