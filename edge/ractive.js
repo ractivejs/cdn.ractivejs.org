@@ -1,6 +1,6 @@
 /*
 	ractive.js v0.4.0
-	2014-04-22 - commit 6d546ea8
+	2014-04-23 - commit 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -7817,7 +7817,7 @@
 			tokenizer.allowWhitespace();
 			if ( !tokenizer.getStringMatch( delimiters[ 1 ] ) ) {
 				tokenizer.pos = start;
-				return null;
+				tokenizer.expected( 'closing delimiter "' + delimiters[ 1 ] + '" after reference' );
 			}
 			return content;
 		}
@@ -8639,9 +8639,11 @@
 				var tokenizer = this;
 				var pos = this.pos;
 				var token = this.getMustache() || this.getComment() || this.getTag() || this.getText();
-				token.getLinePos = function() {
-					return tokenizer.getLinePos( pos );
-				};
+				if ( token ) {
+					token.getLinePos = function() {
+						return tokenizer.getLinePos( pos );
+					};
+				}
 				return token;
 			},
 			getLinePos: function( pos ) {
