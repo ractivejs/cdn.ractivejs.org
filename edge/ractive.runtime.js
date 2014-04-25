@@ -1,6 +1,6 @@
 /*
 	ractive.runtime.js v0.4.0
-	2014-04-25 - commit 70431aae 
+	2014-04-25 - commit fc978208 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
