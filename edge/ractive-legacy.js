@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.js v0.4.0
-	2014-04-26 - commit 1325b1f1 
+	2014-04-26 - commit a0597476 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -6467,7 +6467,7 @@
 				}
 			},
 			toString: function() {
-				var str, interpolator;
+				var escaped, interpolator;
 				if ( this.value === null ) {
 					return this.name;
 				}
@@ -6479,15 +6479,18 @@
 				if ( this.name === 'name' && this.element.lcName === 'input' && ( interpolator = this.interpolator ) ) {
 					return 'name={{' + ( interpolator.keypath || interpolator.ref ) + '}}';
 				}
-				// TODO don't use JSON.stringify?
-				if ( !this.fragment ) {
-					return this.name + '=' + JSON.stringify( this.value );
+				if ( this.fragment ) {
+					escaped = escape( this.fragment.toString() );
+				} else {
+					escaped = escape( this.value );
 				}
-				// TODO deal with boolean attributes correctly
-				str = this.fragment.toString();
-				return this.name + '=' + JSON.stringify( str );
+				return this.name + '=' + ( escaped.indexOf( ' ' ) !== -1 ? '"' + escaped + '"' : escaped );
 			}
 		};
+
+		function escape( string ) {
+			return string.replace( /&/g, '&amp;' ).replace( /"/g, '&quot;' ).replace( /'/g, '&#39;' );
+		}
 		return DomAttribute;
 	}( global_runloop, config_types, render_DomFragment_Attribute_helpers_determineNameAndNamespace, render_DomFragment_Attribute_helpers_setStaticAttribute, render_DomFragment_Attribute_helpers_determinePropertyName, render_DomFragment_Attribute_helpers_getInterpolator, render_DomFragment_Attribute_prototype_bind, render_DomFragment_Attribute_prototype_update, render_StringFragment__StringFragment );
 
