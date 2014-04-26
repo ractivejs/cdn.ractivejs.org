@@ -1,6 +1,6 @@
 /*
 	ractive.js v0.4.0
-	2014-04-26 - commit 6e0004b5 
+	2014-04-26 - commit a3d36530 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -5737,7 +5737,7 @@
 				if ( stringLiteral && ( values = this.values ) ) {
 					return {
 						v: stringLiteral.v.replace( placeholderPattern, function( match, $1 ) {
-							return values[ $1 ] || $1;
+							return $1 in values ? values[ $1 ] : $1;
 						} )
 					};
 				}
