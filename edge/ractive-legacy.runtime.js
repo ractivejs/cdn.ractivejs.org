@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-26 - commit a3d36530 
+	2014-04-26 - commit 1325b1f1 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -2383,7 +2383,7 @@
 
 		var toString = Object.prototype.toString;
 		return function( thing ) {
-			return typeof thing === 'object' && toString.call( thing ) === '[object Object]';
+			return thing && toString.call( thing ) === '[object Object]';
 		};
 	}();
 
@@ -8895,7 +8895,7 @@
 
 	var Ractive_initialise_initialiseRegistries = function( registries, create, extend, isArray, isObject, createComputations, initialiseTemplate, TemplateParser ) {
 
-		//Template is NOT in registryKeys, it doesn't extend b/c it's a string. 
+		//Template is NOT in registryKeys, it doesn't extend b/c it's a string.
 		//We're just reusing the logic as it is mostly like a registry
 		registries = registries.concat( [ 'template' ] );
 		return initialiseRegisties;
@@ -8903,7 +8903,8 @@
 		function getExtendOptions( ractive, options ) {
 			var templateParser;
 			return {
-				default: {
+				// 'default' needs to be quoted as it's a keyword, and will break IE8 otherwise
+				'default': {
 					getArg: function() {
 						return;
 					},
@@ -8972,7 +8973,7 @@
 				var optionsValue = initOptions.newValues[ registry ] || options[ registry ],
 					defaultValue = ractive.constructor[ registry ] || defaults[ registry ],
 					firstArg = registry === 'data' ? optionsValue : ractive.data,
-					regOpt = extendOptions[ registry ] || extendOptions.default,
+					regOpt = extendOptions[ registry ] || extendOptions[ 'default' ],
 					initialValue = regOpt.initialValue( registry );
 				if ( typeof optionsValue === 'function' ) {
 					ractive[ registry ] = optionsValue( firstArg, options, regOpt.getArg() );
