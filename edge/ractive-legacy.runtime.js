@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-25 - commit d3acb13e 
+	2014-04-26 - commit 6e0004b5 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -502,7 +502,9 @@
 
 	var utils_Promise = function() {
 
-		var Promise, PENDING = {}, FULFILLED = {}, REJECTED = {};
+		var Promise, PENDING = {},
+			FULFILLED = {},
+			REJECTED = {};
 		Promise = function( callback ) {
 			var fulfilledHandlers = [],
 				rejectedHandlers = [],
@@ -737,7 +739,8 @@
 	var global_css = function( circular, isClient, removeFromArray ) {
 
 		var runloop, styleElement, head, styleSheet, inDom, prefix = '/* Ractive.js component styles */\n',
-			componentsInPage = {}, styles = [];
+			componentsInPage = {},
+			styles = [];
 		if ( !isClient ) {
 			return;
 		}
@@ -1140,7 +1143,8 @@
 			evaluators = [],
 			computations = [],
 			selectValues = [],
-			checkboxKeypaths = {}, checkboxes = [],
+			checkboxKeypaths = {},
+			checkboxes = [],
 			radios = [],
 			unresolved = [],
 			instances = [],
@@ -2056,7 +2060,8 @@
 		};
 
 		function prefixKeypath( obj, prefix ) {
-			var prefixed = {}, key;
+			var prefixed = {},
+				key;
 			if ( !prefix ) {
 				return obj;
 			}
@@ -2590,7 +2595,8 @@
 
 	var Ractive_prototype_animate__animate = function( isEqual, Promise, normaliseKeypath, animations, get, Animation ) {
 
-		var noop = function() {}, noAnimation = {
+		var noop = function() {},
+			noAnimation = {
 				stop: noop
 			};
 		return function( keypath, to, options ) {
@@ -2971,7 +2977,7 @@
 				// Either return the exact same query, or (if not live) a snapshot
 				return options && options.live ? query : query.slice();
 			}
-			query = makeQuery( this, selector, !! options.live, false );
+			query = makeQuery( this, selector, !!options.live, false );
 			// Add this to the list of live queries Ractive needs to maintain,
 			// if applicable
 			if ( query.live ) {
@@ -2995,7 +3001,7 @@
 				// Either return the exact same query, or (if not live) a snapshot
 				return options && options.live ? query : query.slice();
 			}
-			query = makeQuery( this, selector, !! options.live, true );
+			query = makeQuery( this, selector, !!options.live, true );
 			// Add this to the list of live queries Ractive needs to maintain,
 			// if applicable
 			if ( query.live ) {
@@ -4084,7 +4090,7 @@
 					return;
 				}
 				// Couldn't resolve yet
-				args[ i ] = undefined;
+				args[ i ] = null;
 				expressionResolver.pending += 1;
 				unresolved = new Unresolved( ractive, reference, parentFragment, function( keypath ) {
 					expressionResolver.resolve( i, keypath );
@@ -4138,6 +4144,8 @@
 				var changed;
 				this.args.forEach( function( arg ) {
 					var changedKeypath;
+					if ( !arg )
+						return;
 					if ( arg.keypath && ( changedKeypath = getNewKeypath( arg.keypath, oldKeypath, newKeypath ) ) ) {
 						arg.keypath = changedKeypath;
 						changed = true;
@@ -4800,7 +4808,7 @@
 		// Section
 		DomSection = function( options, docFrag ) {
 			this.type = types.SECTION;
-			this.inverted = !! options.descriptor.n;
+			this.inverted = !!options.descriptor.n;
 			this.pElement = options.pElement;
 			this.fragments = [];
 			this.length = 0;
@@ -4911,7 +4919,8 @@
 
 	var render_DomFragment_shared_insertHtml = function( namespaces, createElement ) {
 
-		var elementCache = {}, ieBug, ieBlacklist;
+		var elementCache = {},
+			ieBug, ieBlacklist;
 		try {
 			createElement( 'table' ).innerHTML = 'foo';
 		} catch ( err ) {
@@ -5098,7 +5107,8 @@
 		svgCamelCaseElements = 'altGlyph altGlyphDef altGlyphItem animateColor animateMotion animateTransform clipPath feBlend feColorMatrix feComponentTransfer feComposite feConvolveMatrix feDiffuseLighting feDisplacementMap feDistantLight feFlood feFuncA feFuncB feFuncG feFuncR feGaussianBlur feImage feMerge feMergeNode feMorphology feOffset fePointLight feSpecularLighting feSpotLight feTile feTurbulence foreignObject glyphRef linearGradient radialGradient textPath vkern'.split( ' ' );
 		svgCamelCaseAttributes = 'attributeName attributeType baseFrequency baseProfile calcMode clipPathUnits contentScriptType contentStyleType diffuseConstant edgeMode externalResourcesRequired filterRes filterUnits glyphRef gradientTransform gradientUnits kernelMatrix kernelUnitLength keyPoints keySplines keyTimes lengthAdjust limitingConeAngle markerHeight markerUnits markerWidth maskContentUnits maskUnits numOctaves pathLength patternContentUnits patternTransform patternUnits pointsAtX pointsAtY pointsAtZ preserveAlpha preserveAspectRatio primitiveUnits refX refY repeatCount repeatDur requiredExtensions requiredFeatures specularConstant specularExponent spreadMethod startOffset stdDeviation stitchTiles surfaceScale systemLanguage tableValues targetX targetY textLength viewBox viewTarget xChannelSelector yChannelSelector zoomAndPan'.split( ' ' );
 		createMap = function( items ) {
-			var map = {}, i = items.length;
+			var map = {},
+				i = items.length;
 			while ( i-- ) {
 				map[ items[ i ].toLowerCase() ] = items[ i ];
 			}
@@ -5488,7 +5498,7 @@
 		};
 		CheckboxNameBinding.prototype = {
 			changed: function() {
-				return this.node.checked !== !! this.checked;
+				return this.node.checked !== !!this.checked;
 			},
 			update: function() {
 				this.checked = this.node.checked;
@@ -7029,7 +7039,8 @@
 
 	var render_DomFragment_Element_shared_executeTransition_Transition_prototype_animateStyle_createTransitions = function( isClient, warn, createElement, camelCase, interpolate, Ticker, prefix, unprefix, hyphenate ) {
 
-		var testStyle, TRANSITION, TRANSITIONEND, CSS_TRANSITIONS_ENABLED, TRANSITION_DURATION, TRANSITION_PROPERTY, TRANSITION_TIMING_FUNCTION, canUseCssTransitions = {}, cannotUseCssTransitions = {};
+		var testStyle, TRANSITION, TRANSITIONEND, CSS_TRANSITIONS_ENABLED, TRANSITION_DURATION, TRANSITION_PROPERTY, TRANSITION_TIMING_FUNCTION, canUseCssTransitions = {},
+			cannotUseCssTransitions = {};
 		if ( !isClient ) {
 			return;
 		}
@@ -8067,7 +8078,8 @@
 
 		var onlyWhitespace = /^\s*$/;
 		return function( component, defaultData, attributes, toBind ) {
-			var data = {}, key, value;
+			var data = {},
+				key, value;
 			// some parameters, e.g. foo="The value is {{bar}}", are 'complex' - in
 			// other words, we need to construct a string fragment to watch
 			// when they change. We store these so they can be torn down later
@@ -8960,8 +8972,8 @@
 				var optionsValue = initOptions.newValues[ registry ] || options[ registry ],
 					defaultValue = ractive.constructor[ registry ] || defaults[ registry ],
 					firstArg = registry === 'data' ? optionsValue : ractive.data,
-					regOpt = extendOptions[ registry ] || extendOptions.
-				default, initialValue = regOpt.initialValue( registry );
+					regOpt = extendOptions[ registry ] || extendOptions.default,
+					initialValue = regOpt.initialValue( registry );
 				if ( typeof optionsValue === 'function' ) {
 					ractive[ registry ] = optionsValue( firstArg, options, regOpt.getArg() );
 				} else if ( defaultValue ) {
@@ -9090,12 +9102,12 @@
 
 		return function( template, callback ) {
 			var promise, changes, options = {
-					updatesOnly: true,
-					registries: [
-						'template',
-						'partials'
-					]
-				};
+				updatesOnly: true,
+				registries: [
+					'template',
+					'partials'
+				]
+			};
 			if ( typeof template === 'function' && !callback ) {
 				callback = template;
 				template = void 0;
