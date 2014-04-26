@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.js v0.4.0
-	2014-04-26 - commit a0597476 
+	2014-04-26 - commit 2e9268e6 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -6376,7 +6376,10 @@
 
 	var render_DomFragment_Attribute__Attribute = function( runloop, types, determineNameAndNamespace, setStaticAttribute, determinePropertyName, getInterpolator, bind, update, StringFragment ) {
 
-		var DomAttribute = function( options ) {
+		var DomAttribute, booleanAttributes;
+		// via https://github.com/kangax/html-minifier/issues/63#issuecomment-37763316
+		booleanAttributes = /allowFullscreen|async|autofocus|autoplay|checked|compact|controls|declare|default|defaultChecked|defaultMuted|defaultSelected|defer|disabled|draggable|enabled|formNoValidate|hidden|indeterminate|inert|isMap|itemScope|loop|multiple|muted|noHref|noResize|noShade|noValidate|noWrap|open|pauseOnExit|readOnly|required|reversed|scoped|seamless|selected|sortable|spellcheck|translate|trueSpeed|typeMustMatch|visible/;
+		DomAttribute = function( options ) {
 			this.type = types.ATTRIBUTE;
 			this.element = options.element;
 			determineNameAndNamespace( this, options.name );
@@ -6478,6 +6481,10 @@
 				// Special case - radio names
 				if ( this.name === 'name' && this.element.lcName === 'input' && ( interpolator = this.interpolator ) ) {
 					return 'name={{' + ( interpolator.keypath || interpolator.ref ) + '}}';
+				}
+				// Special case - boolean attributes
+				if ( this.fragment && booleanAttributes.test( this.name ) ) {
+					return this.fragment.getValue() ? this.name : null;
 				}
 				if ( this.fragment ) {
 					escaped = escape( this.fragment.toString() );
@@ -7652,14 +7659,9 @@
 	var render_DomFragment_Element_prototype_toString = function( voidElementNames, isArray ) {
 
 		return function() {
-			var str, i, len, attrStr;
+			var str;
 			str = '<' + ( this.descriptor.y ? '!doctype' : this.descriptor.e );
-			len = this.attributes.length;
-			for ( i = 0; i < len; i += 1 ) {
-				if ( attrStr = this.attributes[ i ].toString() ) {
-					str += ' ' + attrStr;
-				}
-			}
+			str += this.attributes.map( stringifyAttribute ).join( '' );
 			// Special case - selected options
 			if ( this.lcName === 'option' && optionIsSelected( this ) ) {
 				str += ' selected';
@@ -7723,6 +7725,11 @@
 			if ( valueAttribute.value === nameAttribute.interpolator.value ) {
 				return true;
 			}
+		}
+
+		function stringifyAttribute( attribute ) {
+			var str = attribute.toString();
+			return str ? ' ' + str : '';
 		}
 	}( config_voidElementNames, utils_isArray );
 
