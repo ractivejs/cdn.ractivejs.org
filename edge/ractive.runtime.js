@@ -1,6 +1,6 @@
 /*
 	ractive.runtime.js v0.4.0
-	2014-04-27 - commit 55c63dd5 
+	2014-04-27 - commit 80190fdf 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -2763,10 +2763,16 @@
 		};
 	}( utils_normaliseKeypath, shared_get__get, shared_get_UnresolvedImplicitDependency );
 
-	var utils_getElement = function( input ) {
+	var utils_getElement = function getElement( input ) {
 		var output;
+		if ( !input ) {
+			return;
+		}
 		if ( typeof window === 'undefined' || !document || !input ) {
 			return null;
+		}
+		if ( input.target ) {
+			return getElement( input.target );
 		}
 		// We already have a DOM node - no work to do. (Duck typing alert!)
 		if ( input.nodeType ) {
@@ -8301,7 +8307,7 @@
 
 	var Ractive_prototype_render = function( runloop, css, DomFragment ) {
 
-		return function Ractive_prototype_render( target, callback ) {
+		return function Ractive_prototype_render( target, anchor, callback ) {
 			this._rendering = true;
 			runloop.start( this, callback );
 			// This method is part of the API for one reason only - so that it can be
@@ -8324,7 +8330,11 @@
 				pNode: target
 			} );
 			if ( target ) {
-				target.appendChild( this.fragment.docFrag );
+				if ( anchor ) {
+					target.insertBefore( this.fragment.docFrag, anchor );
+				} else {
+					target.appendChild( this.fragment.docFrag );
+				}
 			}
 			// If this is *isn't* a child of a component that's in the process of rendering,
 			// it should call any `init()` methods at this point
@@ -8718,13 +8728,13 @@
 			// a document fragment to use instead
 			if ( isClient && !ractive.el ) {
 				ractive.el = document.createDocumentFragment();
-			} else if ( ractive.el && !options.append ) {
+			} else if ( ractive.el && !options.append && !ractive.anchor ) {
 				ractive.el.innerHTML = '';
 			}
 			promise = new Promise( function( fulfil ) {
 				fulfilPromise = fulfil;
 			} );
-			ractive.render( ractive.el, fulfilPromise );
+			ractive.render( ractive.el, ractive.anchor, fulfilPromise );
 			if ( options.complete ) {
 				promise = promise.then( options.complete.bind( ractive ) );
 			}
@@ -9388,6 +9398,7 @@
 		}
 
 		function validate( ractive, options ) {
+			var anchor;
 			if ( ractive.magic && !magicAdaptor ) {
 				throw new Error( 'Getters and setters (magic mode) are not supported in this browser' );
 			}
@@ -9395,6 +9406,9 @@
 				ractive.el = getElement( options.el );
 				if ( !ractive.el && ractive.debug ) {
 					throw new Error( 'Could not find container element' );
+				}
+				if ( anchor = getElement( options.el.anchor ) ) {
+					ractive.anchor = anchor;
 				}
 			}
 		}
