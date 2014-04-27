@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-27 - commit d40765e4 
+	2014-04-27 - commit 55c63dd5 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -8654,7 +8654,7 @@
 
 		function initChildren( instance ) {
 			var child;
-			while ( child = instance._childInitQueue.pop() ) {
+			while ( child = instance._childInitQueue.shift() ) {
 				if ( child.instance.init ) {
 					child.instance.init( child.options );
 				}
