@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-28 - commit a5af4b4f 
+	2014-04-28 - commit 1242f803 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -7125,9 +7125,7 @@
 				} else {
 					escaped = escape( this.value );
 				}
-				//TODO: What was Rich's itent in this line? Adding in quotes to make tests pass
-				//return this.name + '=' + ( escaped.indexOf( ' ' ) !== -1 ? '"' + escaped + '"' : escaped );
-				return this.name + '=' + '"' + escaped + '"';
+				return this.name + ( escaped ? '="' + escaped + '"' : '' );
 			}
 		};
 
