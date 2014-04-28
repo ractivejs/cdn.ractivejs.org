@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-27 - commit 80190fdf 
+	2014-04-28 - commit a5af4b4f 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -1491,6 +1491,7 @@
 		MUSTACHE: 11,
 		TAG: 12,
 		ATTRIBUTE: 13,
+		CLOSING_TAG: 14,
 		COMPONENT: 15,
 		NUMBER_LITERAL: 20,
 		STRING_LITERAL: 21,
@@ -4199,7 +4200,7 @@
 			this.keypathObservers = [];
 			this.expressionResolvers = [];
 			descriptor.m.forEach( function( member, i ) {
-				var ref, indexRefs, index, createKeypathObserver, unresolved, expressionResolver;
+				var ref, indexRefs, index, keypathObserver, unresolved, expressionResolver;
 				if ( typeof member === 'string' ) {
 					resolver.members[ i ] = member;
 					return;
@@ -4218,13 +4219,10 @@
 						return;
 					}
 					dynamic = true;
-					createKeypathObserver = function( keypath ) {
-						var keypathObserver = new KeypathObserver( ractive, keypath, mustache.priority, resolver, i );
-						resolver.keypathObservers.push( keypathObserver );
-					};
 					// Can we resolve the reference immediately?
 					if ( keypath = resolveRef( ractive, ref, parentFragment ) ) {
-						createKeypathObserver( keypath );
+						keypathObserver = new KeypathObserver( ractive, keypath, mustache.priority, resolver, i );
+						resolver.keypathObservers.push( keypathObserver );
 						return;
 					}
 					// Couldn't resolve yet
@@ -4266,8 +4264,8 @@
 				}
 				this.callback( this.getKeypath() );
 			},
-			resolve: function( index, value ) {
-				var keypathObserver = new KeypathObserver( this.root, value, this.mustache.priority, this, index );
+			resolve: function( index, keypath ) {
+				var keypathObserver = new KeypathObserver( this.root, keypath, this.mustache.priority, this, index );
 				keypathObserver.update();
 				this.keypathObservers.push( keypathObserver );
 				// when all references have been resolved, we can flag the entire expression
@@ -5832,59 +5830,63 @@
 		return updateAttribute;
 	}( global_runloop, config_namespaces, utils_isArray );
 
-	var parse_Tokenizer_utils_getStringMatch = function( string ) {
-		var substr;
-		substr = this.str.substr( this.pos, string.length );
-		if ( substr === string ) {
-			this.pos += string.length;
-			return string;
-		}
-		return null;
-	};
+	var parse_Parser_expressions_primary_literal_numberLiteral = function( types ) {
 
-	var parse_Tokenizer_utils_allowWhitespace = function() {
-
-		var leadingWhitespace = /^\s+/;
-		return function() {
-			var match = leadingWhitespace.exec( this.remaining() );
-			if ( !match ) {
-				return null;
+		// bulletproof number regex from https://gist.github.com/Rich-Harris/7544330
+		var numberPattern = /^(?:[+-]?)(?:(?:(?:0|[1-9]\d*)?\.\d+)|(?:(?:0|[1-9]\d*)\.)|(?:0|[1-9]\d*))(?:[eE][+-]?\d+)?/;
+		return function( parser ) {
+			var result;
+			if ( result = parser.matchPattern( numberPattern ) ) {
+				return {
+					t: types.NUMBER_LITERAL,
+					v: result
+				};
 			}
-			this.pos += match[ 0 ].length;
-			return match[ 0 ];
+			return null;
 		};
-	}();
+	}( config_types );
 
-	var parse_Tokenizer_utils_makeRegexMatcher = function( regex ) {
+	var parse_Parser_expressions_primary_literal_booleanLiteral = function( types ) {
+
 		return function( tokenizer ) {
-			var match = regex.exec( tokenizer.str.substring( tokenizer.pos ) );
-			if ( !match ) {
-				return null;
+			var remaining = tokenizer.remaining();
+			if ( remaining.substr( 0, 4 ) === 'true' ) {
+				tokenizer.pos += 4;
+				return {
+					t: types.BOOLEAN_LITERAL,
+					v: 'true'
+				};
 			}
-			tokenizer.pos += match[ 0 ].length;
-			return match[ 1 ] || match[ 0 ];
+			if ( remaining.substr( 0, 5 ) === 'false' ) {
+				tokenizer.pos += 5;
+				return {
+					t: types.BOOLEAN_LITERAL,
+					v: 'false'
+				};
+			}
+			return null;
 		};
-	};
+	}( config_types );
 
-	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher = function( makeRegexMatcher ) {
+	var parse_Parser_expressions_primary_literal_stringLiteral_makeQuotedStringMatcher = function() {
 
-		var getStringMiddle, getEscapeSequence, getLineContinuation;
+		var stringMiddlePattern, escapeSequencePattern, lineContinuationPattern;
 		// Match one or more characters until: ", ', \, or EOL/EOF.
 		// EOL/EOF is written as (?!.) (meaning there's no non-newline char next).
-		getStringMiddle = makeRegexMatcher( /^(?=.)[^"'\\]+?(?:(?!.)|(?=["'\\]))/ );
+		stringMiddlePattern = /^(?=.)[^"'\\]+?(?:(?!.)|(?=["'\\]))/;
 		// Match one escape sequence, including the backslash.
-		getEscapeSequence = makeRegexMatcher( /^\\(?:['"\\bfnrt]|0(?![0-9])|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|(?=.)[^ux0-9])/ );
+		escapeSequencePattern = /^\\(?:['"\\bfnrt]|0(?![0-9])|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|(?=.)[^ux0-9])/;
 		// Match one ES5 line continuation (backslash + line terminator).
-		getLineContinuation = makeRegexMatcher( /^\\(?:\r\n|[\u000A\u000D\u2028\u2029])/ );
+		lineContinuationPattern = /^\\(?:\r\n|[\u000A\u000D\u2028\u2029])/;
 		// Helper for defining getDoubleQuotedString and getSingleQuotedString.
 		return function( okQuote ) {
-			return function( tokenizer ) {
+			return function( parser ) {
 				var start, literal, done, next;
-				start = tokenizer.pos;
+				start = parser.pos;
 				literal = '"';
 				done = false;
 				while ( !done ) {
-					next = getStringMiddle( tokenizer ) || getEscapeSequence( tokenizer ) || tokenizer.getStringMatch( okQuote );
+					next = parser.matchPattern( stringMiddlePattern ) || parser.matchPattern( escapeSequencePattern ) || parser.matchString( okQuote );
 					if ( next ) {
 						if ( next === '"' ) {
 							literal += '\\"';
@@ -5894,7 +5896,7 @@
 							literal += next;
 						}
 					} else {
-						next = getLineContinuation( tokenizer );
+						next = parser.matchPattern( lineContinuationPattern );
 						if ( next ) {
 							// convert \(newline-like) into a \u escape, which is allowed in JSON
 							literal += '\\u' + ( '000' + next.charCodeAt( 1 ).toString( 16 ) ).slice( -4 );
@@ -5908,27 +5910,27 @@
 				return JSON.parse( literal );
 			};
 		};
-	}( parse_Tokenizer_utils_makeRegexMatcher );
+	}();
 
-	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getSingleQuotedString = function( makeQuotedStringMatcher ) {
+	var parse_Parser_expressions_primary_literal_stringLiteral_singleQuotedString = function( makeQuotedStringMatcher ) {
 
 		return makeQuotedStringMatcher( '"' );
-	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
+	}( parse_Parser_expressions_primary_literal_stringLiteral_makeQuotedStringMatcher );
 
-	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getDoubleQuotedString = function( makeQuotedStringMatcher ) {
+	var parse_Parser_expressions_primary_literal_stringLiteral_doubleQuotedString = function( makeQuotedStringMatcher ) {
 
 		return makeQuotedStringMatcher( '\'' );
-	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_makeQuotedStringMatcher );
+	}( parse_Parser_expressions_primary_literal_stringLiteral_makeQuotedStringMatcher );
 
-	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral = function( types, getSingleQuotedString, getDoubleQuotedString ) {
+	var parse_Parser_expressions_primary_literal_stringLiteral__stringLiteral = function( types, getSingleQuotedString, getDoubleQuotedString ) {
 
-		return function( tokenizer ) {
+		return function( parser ) {
 			var start, string;
-			start = tokenizer.pos;
-			if ( tokenizer.getStringMatch( '"' ) ) {
-				string = getDoubleQuotedString( tokenizer );
-				if ( !tokenizer.getStringMatch( '"' ) ) {
-					tokenizer.pos = start;
+			start = parser.pos;
+			if ( parser.matchString( '"' ) ) {
+				string = getDoubleQuotedString( parser );
+				if ( !parser.matchString( '"' ) ) {
+					parser.pos = start;
 					return null;
 				}
 				return {
@@ -5936,10 +5938,10 @@
 					v: string
 				};
 			}
-			if ( tokenizer.getStringMatch( '\'' ) ) {
-				string = getSingleQuotedString( tokenizer );
-				if ( !tokenizer.getStringMatch( '\'' ) ) {
-					tokenizer.pos = start;
+			if ( parser.matchString( '\'' ) ) {
+				string = getSingleQuotedString( parser );
+				if ( !parser.matchString( '\'' ) ) {
+					parser.pos = start;
 					return null;
 				}
 				return {
@@ -5949,59 +5951,687 @@
 			}
 			return null;
 		};
-	}( config_types, parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getSingleQuotedString, parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral_getDoubleQuotedString );
+	}( config_types, parse_Parser_expressions_primary_literal_stringLiteral_singleQuotedString, parse_Parser_expressions_primary_literal_stringLiteral_doubleQuotedString );
 
-	var parse_Tokenizer_getExpression_getPrimary_getLiteral_getNumberLiteral = function( types, makeRegexMatcher ) {
+	var parse_Parser_expressions_patterns = {
+		name: /^[a-zA-Z_$][a-zA-Z_$0-9]*/
+	};
 
-		// bulletproof number regex from https://gist.github.com/Rich-Harris/7544330
-		var getNumber = makeRegexMatcher( /^(?:[+-]?)(?:(?:(?:0|[1-9]\d*)?\.\d+)|(?:(?:0|[1-9]\d*)\.)|(?:0|[1-9]\d*))(?:[eE][+-]?\d+)?/ );
-		return function( tokenizer ) {
-			var result;
-			if ( result = getNumber( tokenizer ) ) {
-				return {
-					t: types.NUMBER_LITERAL,
-					v: result
-				};
-			}
-			return null;
-		};
-	}( config_types, parse_Tokenizer_utils_makeRegexMatcher );
-
-	var parse_Tokenizer_getExpression_shared_getName = function( makeRegexMatcher ) {
-
-		return makeRegexMatcher( /^[a-zA-Z_$][a-zA-Z_$0-9]*/ );
-	}( parse_Tokenizer_utils_makeRegexMatcher );
-
-	var parse_Tokenizer_getExpression_shared_getKey = function( getStringLiteral, getNumberLiteral, getName ) {
+	var parse_Parser_expressions_shared_key = function( getStringLiteral, getNumberLiteral, patterns ) {
 
 		var identifier = /^[a-zA-Z_$][a-zA-Z_$0-9]*$/;
 		// http://mathiasbynens.be/notes/javascript-properties
 		// can be any name, string literal, or number literal
-		return function( tokenizer ) {
+		return function( parser ) {
 			var token;
-			if ( token = getStringLiteral( tokenizer ) ) {
+			if ( token = getStringLiteral( parser ) ) {
 				return identifier.test( token.v ) ? token.v : '"' + token.v.replace( /"/g, '\\"' ) + '"';
 			}
-			if ( token = getNumberLiteral( tokenizer ) ) {
+			if ( token = getNumberLiteral( parser ) ) {
 				return token.v;
 			}
-			if ( token = getName( tokenizer ) ) {
+			if ( token = parser.matchPattern( patterns.name ) ) {
 				return token;
 			}
 		};
-	}( parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral, parse_Tokenizer_getExpression_getPrimary_getLiteral_getNumberLiteral, parse_Tokenizer_getExpression_shared_getName );
+	}( parse_Parser_expressions_primary_literal_stringLiteral__stringLiteral, parse_Parser_expressions_primary_literal_numberLiteral, parse_Parser_expressions_patterns );
 
-	var utils_parseJSON = function( getStringMatch, allowWhitespace, getStringLiteral, getKey ) {
+	var parse_Parser_expressions_primary_literal_objectLiteral_keyValuePair = function( types, getKey ) {
+
+		return function( parser ) {
+			var start, key, value;
+			start = parser.pos;
+			// allow whitespace between '{' and key
+			parser.allowWhitespace();
+			key = getKey( parser );
+			if ( key === null ) {
+				parser.pos = start;
+				return null;
+			}
+			// allow whitespace between key and ':'
+			parser.allowWhitespace();
+			// next character must be ':'
+			if ( !parser.matchString( ':' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			// allow whitespace between ':' and value
+			parser.allowWhitespace();
+			// next expression must be a, well... expression
+			value = parser.readExpression();
+			if ( value === null ) {
+				parser.pos = start;
+				return null;
+			}
+			return {
+				t: types.KEY_VALUE_PAIR,
+				k: key,
+				v: value
+			};
+		};
+	}( config_types, parse_Parser_expressions_shared_key );
+
+	var parse_Parser_expressions_primary_literal_objectLiteral_keyValuePairs = function( getKeyValuePair ) {
+
+		return function getKeyValuePairs( parser ) {
+			var start, pairs, pair, keyValuePairs;
+			start = parser.pos;
+			pair = getKeyValuePair( parser );
+			if ( pair === null ) {
+				return null;
+			}
+			pairs = [ pair ];
+			if ( parser.matchString( ',' ) ) {
+				keyValuePairs = getKeyValuePairs( parser );
+				if ( !keyValuePairs ) {
+					parser.pos = start;
+					return null;
+				}
+				return pairs.concat( keyValuePairs );
+			}
+			return pairs;
+		};
+	}( parse_Parser_expressions_primary_literal_objectLiteral_keyValuePair );
+
+	var parse_Parser_expressions_primary_literal_objectLiteral__objectLiteral = function( types, getKeyValuePairs ) {
+
+		return function( parser ) {
+			var start, keyValuePairs;
+			start = parser.pos;
+			// allow whitespace
+			parser.allowWhitespace();
+			if ( !parser.matchString( '{' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			keyValuePairs = getKeyValuePairs( parser );
+			// allow whitespace between final value and '}'
+			parser.allowWhitespace();
+			if ( !parser.matchString( '}' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			return {
+				t: types.OBJECT_LITERAL,
+				m: keyValuePairs
+			};
+		};
+	}( config_types, parse_Parser_expressions_primary_literal_objectLiteral_keyValuePairs );
+
+	var parse_Parser_expressions_shared_expressionList = function getExpressionList( tokenizer ) {
+		var start, expressions, expr, next;
+		start = tokenizer.pos;
+		tokenizer.allowWhitespace();
+		expr = tokenizer.readExpression();
+		if ( expr === null ) {
+			return null;
+		}
+		expressions = [ expr ];
+		// allow whitespace between expression and ','
+		tokenizer.allowWhitespace();
+		if ( tokenizer.matchString( ',' ) ) {
+			next = getExpressionList( tokenizer );
+			if ( next === null ) {
+				tokenizer.pos = start;
+				return null;
+			}
+			next.forEach( append );
+		}
+
+		function append( expression ) {
+			expressions.push( expression );
+		}
+		return expressions;
+	};
+
+	var parse_Parser_expressions_primary_literal_arrayLiteral = function( types, getExpressionList ) {
+
+		return function( parser ) {
+			var start, expressionList;
+			start = parser.pos;
+			// allow whitespace before '['
+			parser.allowWhitespace();
+			if ( !parser.matchString( '[' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			expressionList = getExpressionList( parser );
+			if ( !parser.matchString( ']' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			return {
+				t: types.ARRAY_LITERAL,
+				m: expressionList
+			};
+		};
+	}( config_types, parse_Parser_expressions_shared_expressionList );
+
+	var parse_Parser_expressions_primary_literal__literal = function( getNumberLiteral, getBooleanLiteral, getStringLiteral, getObjectLiteral, getArrayLiteral ) {
+
+		return function( tokenizer ) {
+			var literal = getNumberLiteral( tokenizer ) || getBooleanLiteral( tokenizer ) || getStringLiteral( tokenizer ) || getObjectLiteral( tokenizer ) || getArrayLiteral( tokenizer );
+			return literal;
+		};
+	}( parse_Parser_expressions_primary_literal_numberLiteral, parse_Parser_expressions_primary_literal_booleanLiteral, parse_Parser_expressions_primary_literal_stringLiteral__stringLiteral, parse_Parser_expressions_primary_literal_objectLiteral__objectLiteral, parse_Parser_expressions_primary_literal_arrayLiteral );
+
+	var parse_Parser_expressions_primary_reference = function( types, patterns ) {
+
+		var dotRefinementPattern, arrayMemberPattern, getArrayRefinement, globals;
+		dotRefinementPattern = /^\.[a-zA-Z_$0-9]+/;
+		getArrayRefinement = function( parser ) {
+			var num = parser.matchPattern( arrayMemberPattern );
+			if ( num ) {
+				return '.' + num;
+			}
+			return null;
+		};
+		arrayMemberPattern = /^\[(0|[1-9][0-9]*)\]/;
+		// if a reference is a browser global, we don't deference it later, so it needs special treatment
+		globals = /^(?:Array|Date|RegExp|decodeURIComponent|decodeURI|encodeURIComponent|encodeURI|isFinite|isNaN|parseFloat|parseInt|JSON|Math|NaN|undefined|null)$/;
+		return function( parser ) {
+			var startPos, ancestor, name, dot, combo, refinement, lastDotIndex;
+			startPos = parser.pos;
+			// we might have ancestor refs...
+			ancestor = '';
+			while ( parser.matchString( '../' ) ) {
+				ancestor += '../';
+			}
+			if ( !ancestor ) {
+				// we might have an implicit iterator or a restricted reference
+				dot = parser.matchString( '.' ) || '';
+			}
+			name = parser.matchPattern( patterns.name ) || '';
+			// if this is a browser global, stop here
+			if ( !ancestor && !dot && globals.test( name ) ) {
+				return {
+					t: types.GLOBAL,
+					v: name
+				};
+			}
+			// allow the use of `this`
+			if ( name === 'this' && !ancestor && !dot ) {
+				name = '.';
+				startPos += 3;
+			}
+			combo = ( ancestor || dot ) + name;
+			if ( !combo ) {
+				return null;
+			}
+			while ( refinement = parser.matchPattern( dotRefinementPattern ) || getArrayRefinement( parser ) ) {
+				combo += refinement;
+			}
+			if ( parser.matchString( '(' ) ) {
+				// if this is a method invocation (as opposed to a function) we need
+				// to strip the method name from the reference combo, else the context
+				// will be wrong
+				lastDotIndex = combo.lastIndexOf( '.' );
+				if ( lastDotIndex !== -1 ) {
+					combo = combo.substr( 0, lastDotIndex );
+					parser.pos = startPos + combo.length;
+				} else {
+					parser.pos -= 1;
+				}
+			}
+			return {
+				t: types.REFERENCE,
+				n: combo
+			};
+		};
+	}( config_types, parse_Parser_expressions_patterns );
+
+	var parse_Parser_expressions_primary_bracketedExpression = function( types ) {
+
+		return function( parser ) {
+			var start, expr;
+			start = parser.pos;
+			if ( !parser.matchString( '(' ) ) {
+				return null;
+			}
+			parser.allowWhitespace();
+			expr = parser.readExpression();
+			if ( !expr ) {
+				parser.pos = start;
+				return null;
+			}
+			parser.allowWhitespace();
+			if ( !parser.matchString( ')' ) ) {
+				parser.pos = start;
+				return null;
+			}
+			return {
+				t: types.BRACKETED,
+				x: expr
+			};
+		};
+	}( config_types );
+
+	var parse_Parser_expressions_primary__primary = function( getLiteral, getReference, getBracketedExpression ) {
+
+		return function( tokenizer ) {
+			return getLiteral( tokenizer ) || getReference( tokenizer ) || getBracketedExpression( tokenizer );
+		};
+	}( parse_Parser_expressions_primary_literal__literal, parse_Parser_expressions_primary_reference, parse_Parser_expressions_primary_bracketedExpression );
+
+	var parse_Parser_expressions_shared_refinement = function( types, patterns ) {
+
+		return function getRefinement( parser ) {
+			var start, name, expr;
+			start = parser.pos;
+			parser.allowWhitespace();
+			// "." name
+			if ( parser.matchString( '.' ) ) {
+				parser.allowWhitespace();
+				if ( name = parser.matchPattern( patterns.name ) ) {
+					return {
+						t: types.REFINEMENT,
+						n: name
+					};
+				}
+				parser.error( 'Expected a property name' );
+			}
+			// "[" expression "]"
+			if ( parser.matchString( '[' ) ) {
+				parser.allowWhitespace();
+				expr = parser.readExpression();
+				if ( !expr ) {
+					parser.error( 'an expression' );
+				}
+				parser.allowWhitespace();
+				if ( !parser.matchString( ']' ) ) {
+					parser.error( 'Expected \']\'' );
+				}
+				return {
+					t: types.REFINEMENT,
+					x: expr
+				};
+			}
+			return null;
+		};
+	}( config_types, parse_Parser_expressions_patterns );
+
+	var parse_Parser_expressions_memberOrInvocation = function( types, getPrimary, getExpressionList, getRefinement ) {
+
+		return function( parser ) {
+			var current, expression, refinement, expressionList;
+			expression = getPrimary( parser );
+			if ( !expression ) {
+				return null;
+			}
+			while ( expression ) {
+				current = parser.pos;
+				if ( refinement = getRefinement( parser ) ) {
+					expression = {
+						t: types.MEMBER,
+						x: expression,
+						r: refinement
+					};
+				} else if ( parser.matchString( '(' ) ) {
+					parser.allowWhitespace();
+					expressionList = getExpressionList( parser );
+					parser.allowWhitespace();
+					if ( !parser.matchString( ')' ) ) {
+						parser.pos = current;
+						break;
+					}
+					expression = {
+						t: types.INVOCATION,
+						x: expression
+					};
+					if ( expressionList ) {
+						expression.o = expressionList;
+					}
+				} else {
+					break;
+				}
+			}
+			return expression;
+		};
+	}( config_types, parse_Parser_expressions_primary__primary, parse_Parser_expressions_shared_expressionList, parse_Parser_expressions_shared_refinement );
+
+	var parse_Parser_expressions_typeof = function( types, getMemberOrInvocation ) {
+
+		var getTypeof, makePrefixSequenceMatcher;
+		makePrefixSequenceMatcher = function( symbol, fallthrough ) {
+			return function( parser ) {
+				var start, expression;
+				if ( !parser.matchString( symbol ) ) {
+					return fallthrough( parser );
+				}
+				start = parser.pos;
+				parser.allowWhitespace();
+				expression = parser.readExpression();
+				if ( !expression ) {
+					parser.error( 'Expected a JavaScript expression' );
+				}
+				return {
+					s: symbol,
+					o: expression,
+					t: types.PREFIX_OPERATOR
+				};
+			};
+		};
+		// create all prefix sequence matchers, return getTypeof
+		( function() {
+			var i, len, matcher, prefixOperators, fallthrough;
+			prefixOperators = '! ~ + - typeof'.split( ' ' );
+			fallthrough = getMemberOrInvocation;
+			for ( i = 0, len = prefixOperators.length; i < len; i += 1 ) {
+				matcher = makePrefixSequenceMatcher( prefixOperators[ i ], fallthrough );
+				fallthrough = matcher;
+			}
+			// typeof operator is higher precedence than multiplication, so provides the
+			// fallthrough for the multiplication sequence matcher we're about to create
+			// (we're skipping void and delete)
+			getTypeof = fallthrough;
+		}() );
+		return getTypeof;
+	}( config_types, parse_Parser_expressions_memberOrInvocation );
+
+	var parse_Parser_expressions_logicalOr = function( types, getTypeof ) {
+
+		var getLogicalOr, makeInfixSequenceMatcher;
+		makeInfixSequenceMatcher = function( symbol, fallthrough ) {
+			return function( parser ) {
+				var start, left, right;
+				left = fallthrough( parser );
+				if ( !left ) {
+					return null;
+				}
+				// Loop to handle left-recursion in a case like `a * b * c` and produce
+				// left association, i.e. `(a * b) * c`.  The matcher can't call itself
+				// to parse `left` because that would be infinite regress.
+				while ( true ) {
+					start = parser.pos;
+					parser.allowWhitespace();
+					if ( !parser.matchString( symbol ) ) {
+						parser.pos = start;
+						return left;
+					}
+					// special case - in operator must not be followed by [a-zA-Z_$0-9]
+					if ( symbol === 'in' && /[a-zA-Z_$0-9]/.test( parser.remaining().charAt( 0 ) ) ) {
+						parser.pos = start;
+						return left;
+					}
+					parser.allowWhitespace();
+					// right operand must also consist of only higher-precedence operators
+					right = fallthrough( parser );
+					if ( !right ) {
+						parser.pos = start;
+						return left;
+					}
+					left = {
+						t: types.INFIX_OPERATOR,
+						s: symbol,
+						o: [
+							left,
+							right
+						]
+					};
+				}
+			};
+		};
+		// create all infix sequence matchers, and return getLogicalOr
+		( function() {
+			var i, len, matcher, infixOperators, fallthrough;
+			// All the infix operators on order of precedence (source: https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Operators/Operator_Precedence)
+			// Each sequence matcher will initially fall through to its higher precedence
+			// neighbour, and only attempt to match if one of the higher precedence operators
+			// (or, ultimately, a literal, reference, or bracketed expression) already matched
+			infixOperators = '* / % + - << >> >>> < <= > >= in instanceof == != === !== & ^ | && ||'.split( ' ' );
+			// A typeof operator is higher precedence than multiplication
+			fallthrough = getTypeof;
+			for ( i = 0, len = infixOperators.length; i < len; i += 1 ) {
+				matcher = makeInfixSequenceMatcher( infixOperators[ i ], fallthrough );
+				fallthrough = matcher;
+			}
+			// Logical OR is the fallthrough for the conditional matcher
+			getLogicalOr = fallthrough;
+		}() );
+		return getLogicalOr;
+	}( config_types, parse_Parser_expressions_typeof );
+
+	var parse_Parser_expressions_conditional = function( types, getLogicalOr ) {
+
+		// The conditional operator is the lowest precedence operator, so we start here
+		return function( parser ) {
+			var start, expression, ifTrue, ifFalse;
+			expression = getLogicalOr( parser );
+			if ( !expression ) {
+				return null;
+			}
+			start = parser.pos;
+			parser.allowWhitespace();
+			if ( !parser.matchString( '?' ) ) {
+				parser.pos = start;
+				return expression;
+			}
+			parser.allowWhitespace();
+			ifTrue = parser.readExpression();
+			if ( !ifTrue ) {
+				parser.pos = start;
+				return expression;
+			}
+			parser.allowWhitespace();
+			if ( !parser.matchString( ':' ) ) {
+				parser.pos = start;
+				return expression;
+			}
+			parser.allowWhitespace();
+			ifFalse = parser.readExpression();
+			if ( !ifFalse ) {
+				parser.pos = start;
+				return expression;
+			}
+			return {
+				t: types.CONDITIONAL,
+				o: [
+					expression,
+					ifTrue,
+					ifFalse
+				]
+			};
+		};
+	}( config_types, parse_Parser_expressions_logicalOr );
+
+	var parse_Parser_utils_flattenExpression = function( types, isObject ) {
+
+		return function( expression ) {
+			var refs = [],
+				flattened;
+			extractRefs( expression, refs );
+			flattened = {
+				r: refs,
+				s: stringify( this, expression, refs )
+			};
+			return flattened;
+		};
+
+		function quoteStringLiteral( str ) {
+			return JSON.stringify( String( str ) );
+		}
+		// TODO maybe refactor this?
+		function extractRefs( node, refs ) {
+			var i, list;
+			if ( node.t === types.REFERENCE ) {
+				if ( refs.indexOf( node.n ) === -1 ) {
+					refs.unshift( node.n );
+				}
+			}
+			list = node.o || node.m;
+			if ( list ) {
+				if ( isObject( list ) ) {
+					extractRefs( list, refs );
+				} else {
+					i = list.length;
+					while ( i-- ) {
+						extractRefs( list[ i ], refs );
+					}
+				}
+			}
+			if ( node.x ) {
+				extractRefs( node.x, refs );
+			}
+			if ( node.r ) {
+				extractRefs( node.r, refs );
+			}
+			if ( node.v ) {
+				extractRefs( node.v, refs );
+			}
+		}
+
+		function stringify( parser, node, refs ) {
+			var stringifyAll = function( item ) {
+				return stringify( parser, item, refs );
+			};
+			switch ( node.t ) {
+				case types.BOOLEAN_LITERAL:
+				case types.GLOBAL:
+				case types.NUMBER_LITERAL:
+					return node.v;
+				case types.STRING_LITERAL:
+					return quoteStringLiteral( node.v );
+				case types.ARRAY_LITERAL:
+					return '[' + ( node.m ? node.m.map( stringifyAll ).join( ',' ) : '' ) + ']';
+				case types.OBJECT_LITERAL:
+					return '{' + ( node.m ? node.m.map( stringifyAll ).join( ',' ) : '' ) + '}';
+				case types.KEY_VALUE_PAIR:
+					return node.k + ':' + stringify( parser, node.v, refs );
+				case types.PREFIX_OPERATOR:
+					return ( node.s === 'typeof' ? 'typeof ' : node.s ) + stringify( parser, node.o, refs );
+				case types.INFIX_OPERATOR:
+					return stringify( parser, node.o[ 0 ], refs ) + ( node.s.substr( 0, 2 ) === 'in' ? ' ' + node.s + ' ' : node.s ) + stringify( parser, node.o[ 1 ], refs );
+				case types.INVOCATION:
+					return stringify( parser, node.x, refs ) + '(' + ( node.o ? node.o.map( stringifyAll ).join( ',' ) : '' ) + ')';
+				case types.BRACKETED:
+					return '(' + stringify( parser, node.x, refs ) + ')';
+				case types.MEMBER:
+					return stringify( parser, node.x, refs ) + stringify( parser, node.r, refs );
+				case types.REFINEMENT:
+					return node.n ? '.' + node.n : '[' + stringify( parser, node.x, refs ) + ']';
+				case types.CONDITIONAL:
+					return stringify( parser, node.o[ 0 ], refs ) + '?' + stringify( parser, node.o[ 1 ], refs ) + ':' + stringify( parser, node.o[ 2 ], refs );
+				case types.REFERENCE:
+					return '${' + refs.indexOf( node.n ) + '}';
+				default:
+					parser.error( 'foo' );
+			}
+		}
+	}( config_types, utils_isObject );
+
+	var parse_Parser__Parser = function( circular, types, create, hasOwnProperty, getConditional, flattenExpression ) {
+
+		var Parser, ParseError, leadingWhitespace = /^\s+/;
+		ParseError = function( message ) {
+			this.name = 'ParseError';
+			this.message = message;
+		};
+		ParseError.prototype = Error.prototype;
+		Parser = function( str, options ) {
+			var items, item;
+			this.str = str;
+			this.options = options || {};
+			this.pos = 0;
+			// Custom init logic
+			if ( this.init )
+				this.init( str, options );
+			items = [];
+			while ( this.pos < this.str.length && ( item = this.read() ) ) {
+				items.push( item );
+			}
+			this.leftover = this.remaining();
+			this.result = this.postProcess ? this.postProcess( items, options ) : items;
+		};
+		Parser.prototype = {
+			read: function( converters ) {
+				var pos, i, len, item;
+				if ( !converters )
+					converters = this.converters;
+				pos = this.pos;
+				len = converters.length;
+				for ( i = 0; i < len; i += 1 ) {
+					this.pos = pos;
+					// reset for each attempt
+					if ( item = converters[ i ]( this ) ) {
+						return item;
+					}
+				}
+				return null;
+			},
+			readExpression: function() {
+				// The conditional operator is the lowest precedence operator (except yield,
+				// assignment operators, and commas, none of which are supported), so we
+				// start there. If it doesn't match, it 'falls through' to progressively
+				// higher precedence operators, until it eventually matches (or fails to
+				// match) a 'primary' - a literal or a reference. This way, the abstract syntax
+				// tree has everything in its proper place, i.e. 2 + 3 * 4 === 14, not 20.
+				return getConditional( this );
+			},
+			flattenExpression: flattenExpression,
+			error: function( err ) {
+				var lines, currentLine, currentLineEnd, nextLineEnd, lineNum, columnNum, message;
+				lines = this.str.split( '\n' );
+				lineNum = -1;
+				nextLineEnd = 0;
+				do {
+					currentLineEnd = nextLineEnd;
+					currentLine = lines[ lineNum+++1 ];
+					nextLineEnd = currentLine.length + 1;
+				} while ( nextLineEnd < this.pos );
+				columnNum = this.pos - currentLineEnd;
+				message = err + ' at line ' + ( lineNum + 1 ) + ' character ' + ( columnNum + 1 ) + ':\n' + currentLine + '\n' + new Array( columnNum + 1 ).join( ' ' ) + '^----';
+				throw new ParseError( message );
+			},
+			matchString: function( string ) {
+				if ( this.str.substr( this.pos, string.length ) === string ) {
+					this.pos += string.length;
+					return string;
+				}
+			},
+			matchPattern: function( pattern ) {
+				var match;
+				if ( match = pattern.exec( this.remaining() ) ) {
+					this.pos += match[ 0 ].length;
+					return match[ 1 ] || match[ 0 ];
+				}
+			},
+			allowWhitespace: function() {
+				this.matchPattern( leadingWhitespace );
+			},
+			remaining: function() {
+				return this.str.substring( this.pos );
+			},
+			nextChar: function() {
+				return this.str.charAt( this.pos );
+			}
+		};
+		Parser.extend = function( proto ) {
+			var Parent = this,
+				Child, key;
+			Child = function( str, options ) {
+				Parser.call( this, str, options );
+			};
+			Child.prototype = create( Parent.prototype );
+			for ( key in proto ) {
+				if ( hasOwnProperty.call( proto, key ) ) {
+					Child.prototype[ key ] = proto[ key ];
+				}
+			}
+			Child.extend = Parser.extend;
+			return Child;
+		};
+		circular.Parser = Parser;
+		return Parser;
+	}( circular, config_types, utils_create, utils_hasOwnProperty, parse_Parser_expressions_conditional, parse_Parser_utils_flattenExpression );
+
+	var utils_parseJSON = function( Parser, getStringLiteral, getKey ) {
 
 		// simple JSON parser, without the restrictions of JSON parse
 		// (i.e. having to double-quote keys).
 		//
-		// This re-uses logic from the main template parser, albeit
-		// messily. Could probably use a cleanup at some point.
-		//
 		// If passed a hash of values as the second argument, ${placeholders}
 		// will be replaced with those values
-		var Tokenizer, specials, specialsPattern, numberPattern, placeholderPattern, placeholderAtStartPattern;
+		var JsonParser, specials, specialsPattern, numberPattern, placeholderPattern, placeholderAtStartPattern, onlyWhitespace;
 		specials = {
 			'true': true,
 			'false': false,
@@ -6012,122 +6642,122 @@
 		numberPattern = /^(?:[+-]?)(?:(?:(?:0|[1-9]\d*)?\.\d+)|(?:(?:0|[1-9]\d*)\.)|(?:0|[1-9]\d*))(?:[eE][+-]?\d+)?/;
 		placeholderPattern = /\$\{([^\}]+)\}/g;
 		placeholderAtStartPattern = /^\$\{([^\}]+)\}/;
-		Tokenizer = function( str, values ) {
-			this.str = str;
-			this.values = values;
-			this.pos = 0;
-			this.result = this.getToken();
-		};
-		Tokenizer.prototype = {
-			remaining: function() {
-				return this.str.substring( this.pos );
+		onlyWhitespace = /^\s*$/;
+		JsonParser = Parser.extend( {
+			init: function( str, options ) {
+				this.values = options.values;
 			},
-			getStringMatch: getStringMatch,
-			getToken: function() {
-				this.allowWhitespace();
-				return this.getPlaceholder() || this.getSpecial() || this.getNumber() || this.getString() || this.getObject() || this.getArray();
-			},
-			getPlaceholder: function() {
-				var match;
-				if ( !this.values ) {
+			postProcess: function( result ) {
+				if ( result.length !== 1 || !onlyWhitespace.test( this.leftover ) ) {
 					return null;
 				}
-				if ( ( match = placeholderAtStartPattern.exec( this.remaining() ) ) && this.values.hasOwnProperty( match[ 1 ] ) ) {
-					this.pos += match[ 0 ].length;
-					return {
-						v: this.values[ match[ 1 ] ]
-					};
-				}
+				return {
+					value: result[ 0 ].v
+				};
 			},
-			getSpecial: function() {
-				var match;
-				if ( match = specialsPattern.exec( this.remaining() ) ) {
-					this.pos += match[ 0 ].length;
-					return {
-						v: specials[ match[ 0 ] ]
-					};
-				}
-			},
-			getNumber: function() {
-				var match;
-				if ( match = numberPattern.exec( this.remaining() ) ) {
-					this.pos += match[ 0 ].length;
-					return {
-						v: +match[ 0 ]
-					};
-				}
-			},
-			getString: function() {
-				var stringLiteral = getStringLiteral( this ),
-					values;
-				if ( stringLiteral && ( values = this.values ) ) {
-					return {
-						v: stringLiteral.v.replace( placeholderPattern, function( match, $1 ) {
-							return $1 in values ? values[ $1 ] : $1;
-						} )
-					};
-				}
-				return stringLiteral;
-			},
-			getObject: function() {
-				var result, pair;
-				if ( !this.getStringMatch( '{' ) ) {
-					return null;
-				}
-				result = {};
-				while ( pair = getKeyValuePair( this ) ) {
-					result[ pair.key ] = pair.value;
-					this.allowWhitespace();
-					if ( this.getStringMatch( '}' ) ) {
-						return {
-							v: result
-						};
-					}
-					if ( !this.getStringMatch( ',' ) ) {
-						return null;
-					}
-				}
-				return null;
-			},
-			getArray: function() {
-				var result, valueToken;
-				if ( !this.getStringMatch( '[' ) ) {
-					return null;
-				}
-				result = [];
-				while ( valueToken = this.getToken() ) {
-					result.push( valueToken.v );
-					this.allowWhitespace();
-					if ( this.getStringMatch( ']' ) ) {
-						return {
-							v: result
-						};
-					}
-					if ( !this.getStringMatch( ',' ) ) {
-						return null;
-					}
-				}
-				return null;
-			},
-			allowWhitespace: allowWhitespace
-		};
+			converters: [
 
-		function getKeyValuePair( tokenizer ) {
+				function getPlaceholder( parser ) {
+					var placeholder;
+					if ( !parser.values ) {
+						return null;
+					}
+					placeholder = parser.matchPattern( placeholderAtStartPattern );
+					if ( placeholder && parser.values.hasOwnProperty( placeholder ) ) {
+						return {
+							v: parser.values[ placeholder ]
+						};
+					}
+				},
+				function getSpecial( parser ) {
+					var special;
+					if ( special = parser.matchPattern( specialsPattern ) ) {
+						return {
+							v: specials[ special ]
+						};
+					}
+				},
+				function getNumber( parser ) {
+					var number;
+					if ( number = parser.matchPattern( numberPattern ) ) {
+						return {
+							v: +number
+						};
+					}
+				},
+				function getString( parser ) {
+					var stringLiteral = getStringLiteral( parser ),
+						values;
+					if ( stringLiteral && ( values = parser.values ) ) {
+						return {
+							v: stringLiteral.v.replace( placeholderPattern, function( match, $1 ) {
+								return $1 in values ? values[ $1 ] : $1;
+							} )
+						};
+					}
+					return stringLiteral;
+				},
+				function getObject( parser ) {
+					var result, pair;
+					if ( !parser.matchString( '{' ) ) {
+						return null;
+					}
+					result = {};
+					while ( pair = getKeyValuePair( parser ) ) {
+						result[ pair.key ] = pair.value;
+						parser.allowWhitespace();
+						if ( parser.matchString( '}' ) ) {
+							return {
+								v: result
+							};
+						}
+						if ( !parser.matchString( ',' ) ) {
+							return null;
+						}
+					}
+					return null;
+				},
+				function getArray( parser ) {
+					var result, valueToken;
+					if ( !parser.matchString( '[' ) ) {
+						return null;
+					}
+					result = [];
+					parser.allowWhitespace();
+					while ( valueToken = parser.read() ) {
+						result.push( valueToken.v );
+						parser.allowWhitespace();
+						if ( parser.matchString( ']' ) ) {
+							return {
+								v: result
+							};
+						}
+						if ( !parser.matchString( ',' ) ) {
+							return null;
+						}
+						parser.allowWhitespace();
+					}
+					return null;
+				}
+			]
+		} );
+
+		function getKeyValuePair( parser ) {
 			var key, valueToken, pair;
-			tokenizer.allowWhitespace();
-			key = getKey( tokenizer );
+			parser.allowWhitespace();
+			key = getKey( parser );
 			if ( !key ) {
 				return null;
 			}
 			pair = {
 				key: key
 			};
-			tokenizer.allowWhitespace();
-			if ( !tokenizer.getStringMatch( ':' ) ) {
+			parser.allowWhitespace();
+			if ( !parser.matchString( ':' ) ) {
 				return null;
 			}
-			tokenizer.allowWhitespace();
-			valueToken = tokenizer.getToken();
+			parser.allowWhitespace();
+			valueToken = parser.read();
 			if ( !valueToken ) {
 				return null;
 			}
@@ -6135,16 +6765,12 @@
 			return pair;
 		}
 		return function( str, values ) {
-			var tokenizer = new Tokenizer( str, values );
-			if ( tokenizer.result ) {
-				return {
-					value: tokenizer.result.v,
-					remaining: tokenizer.remaining()
-				};
-			}
-			return null;
+			var parser = new JsonParser( str, {
+				values: values
+			} );
+			return parser.result;
 		};
-	}( parse_Tokenizer_utils_getStringMatch, parse_Tokenizer_utils_allowWhitespace, parse_Tokenizer_getExpression_getPrimary_getLiteral_getStringLiteral__getStringLiteral, parse_Tokenizer_getExpression_shared_getKey );
+	}( parse_Parser__Parser, parse_Parser_expressions_primary_literal_stringLiteral__stringLiteral, parse_Parser_expressions_shared_key );
 
 	var render_StringFragment_Interpolator = function( types, teardown, Mustache ) {
 
@@ -6248,8 +6874,7 @@
 
 	var render_StringFragment_prototype_getValue = function( types, warn, parseJSON ) {
 
-		var onlyWhitespace = /^\s*$/,
-			empty = {};
+		var empty = {};
 		return function StringFragment$getValue( options ) {
 			var asArgs, parse, value, values, jsonesque, parsed, cache, dirtyFlag, result;
 			options = options || empty;
@@ -6270,7 +6895,7 @@
 						jsonesque = processItems( this.items, values, this.root._guid );
 						parsed = parseJSON( asArgs ? '[' + jsonesque + ']' : jsonesque, values );
 					}
-					if ( !parsed || !onlyWhitespace.test( parsed.remaining ) ) {
+					if ( !parsed ) {
 						result = asArgs ? [ this.toString() ] : this.toString();
 					} else {
 						result = parsed.value;
@@ -7516,8 +8141,8 @@
 					decorate( descriptor.o, root, element );
 				}
 				// trigger intro transition
-				if ( descriptor.t1 ) {
-					executeTransition( descriptor.t1, root, element, true );
+				if ( descriptor.t0 || descriptor.t1 ) {
+					executeTransition( descriptor.t0 || descriptor.t1, root, element, true );
 				}
 				if ( element.node.tagName === 'OPTION' ) {
 					// Special case... if this option's parent select was previously
@@ -7590,8 +8215,8 @@
 				this.decorator.teardown();
 			}
 			// Outro, if necessary
-			if ( this.descriptor.t2 ) {
-				executeTransition( this.descriptor.t2, this.root, this, false );
+			if ( this.descriptor.t0 || this.descriptor.t2 ) {
+				executeTransition( this.descriptor.t0 || this.descriptor.t2, this.root, this, false );
 			}
 			// Remove this node from any live queries
 			if ( this.liveQueries ) {
@@ -7665,7 +8290,7 @@
 		};
 	}( render_shared_utils_assignNewKeypath );
 
-	var config_voidElementNames = 'area base br col command doctype embed hr img input keygen link meta param source track wbr'.split( ' ' );
+	var config_voidElementNames = /^(?:area|base|br|col|command|doctype|embed|hr|img|input|keygen|link|meta|param|source|track|wbr)$/i;
 
 	var render_DomFragment_Element_prototype_toString = function( voidElementNames, isArray ) {
 
@@ -7686,7 +8311,7 @@
 				str += this.fragment.toString();
 			}
 			// add a closing tag if this isn't a void element
-			if ( voidElementNames.indexOf( this.descriptor.e ) === -1 ) {
+			if ( !voidElementNames.test( this.descriptor.e ) ) {
 				str += '</' + this.descriptor.e + '>';
 			}
 			this.stringifying = false;
@@ -8097,7 +8722,6 @@
 
 	var render_DomFragment_Component_initialise_createModel__createModel = function( types, parseJSON, resolveRef, get, ComponentParameter ) {
 
-		var onlyWhitespace = /^\s*$/;
 		return function( component, defaultData, attributes, toBind ) {
 			var data = {},
 				key, value;
@@ -8123,7 +8747,7 @@
 			// If this is a static value, great
 			if ( typeof descriptor === 'string' ) {
 				parsed = parseJSON( descriptor );
-				if ( !parsed || !onlyWhitespace.test( parsed.remaining ) ) {
+				if ( !parsed ) {
 					return descriptor;
 				}
 				return parsed.value;
