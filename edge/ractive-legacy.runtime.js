@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-29 - commit 9336505e 
+	2014-04-29 - commit a75ca9bb 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -10487,7 +10487,7 @@
 		};
 	}( config_initOptions, extend_wrapMethod, Ractive_initialise );
 
-	var extend__extend = function( create, defineProperties, getGuid, extendObject, inheritFromParent, inheritFromChildProps, extractInlinePartials, conditionallyParseTemplate, conditionallyParsePartials, initChildInstance, circular ) {
+	var extend__extend = function( create, defineProperty, getGuid, extendObject, inheritFromParent, inheritFromChildProps, extractInlinePartials, conditionallyParseTemplate, conditionallyParsePartials, initChildInstance, circular ) {
 
 		var Ractive;
 		circular.push( function() {
@@ -10507,14 +10507,10 @@
 			};
 			Child.prototype = create( Parent.prototype );
 			Child.prototype.constructor = Child;
-			defineProperties( Child, {
-				extend: {
-					value: Parent.extend
-				},
-				// each component needs a guid, for managing CSS etc
-				_guid: {
-					value: getGuid()
-				}
+			Child.extend = extend;
+			// each component needs a guid, for managing CSS etc
+			defineProperty( Child, '_guid', {
+				value: getGuid()
 			} );
 			// Inherit options from parent
 			inheritFromParent( Child, Parent );
@@ -10538,7 +10534,7 @@
 			}
 			return Child;
 		};
-	}( utils_create, utils_defineProperties, utils_getGuid, utils_extend, extend_inheritFromParent, extend_inheritFromChildProps, extend_extractInlinePartials, extend_conditionallyParseTemplate, extend_conditionallyParsePartials, extend_initChildInstance, circular );
+	}( utils_create, utils_defineProperty, utils_getGuid, utils_extend, extend_inheritFromParent, extend_inheritFromChildProps, extend_extractInlinePartials, extend_conditionallyParseTemplate, extend_conditionallyParsePartials, extend_initChildInstance, circular );
 
 	var Ractive__Ractive = function( initOptions, svg, defineProperties, proto, partialRegistry, adaptorRegistry, componentsRegistry, easingRegistry, interpolatorsRegistry, Promise, extend, parse, initialise, circular ) {
 
