@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.runtime.js v0.4.0
-	2014-04-28 - commit 1242f803 
+	2014-04-29 - commit 9336505e 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -3338,14 +3338,15 @@
 		return function( ractive, pattern ) {
 			var keys, key, values, toGet, newToGet, expand, concatenate;
 			keys = pattern.split( '.' );
-			toGet = [];
+			toGet = [ '' ];
 			expand = function( keypath ) {
-				var value, key;
+				var value, key, childKeypath;
 				value = ractive._wrapped[ keypath ] ? ractive._wrapped[ keypath ].get() : ractive.get( keypath );
 				for ( key in value ) {
 					if ( value.hasOwnProperty( key ) && ( key !== '_ractive' || !isArray( value ) ) ) {
 						// for benefit of IE8
-						newToGet.push( keypath + '.' + key );
+						childKeypath = keypath ? keypath + '.' + key : key;
+						newToGet.push( childKeypath );
 					}
 				}
 			};
