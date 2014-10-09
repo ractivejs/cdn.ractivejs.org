@@ -1,6 +1,6 @@
 /*
 	ractive-legacy.js v0.6.0
-	2014-10-08 - commit f559933a 
+	2014-10-09 - commit e3c11a49 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
