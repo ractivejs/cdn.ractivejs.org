@@ -1,6 +1,6 @@
 /*
-	ractive.js v0.6.0
-	2014-10-25 - commit bc6b58aa 
+	ractive.js v0.6.1
+	2014-10-25 - commit add32325 
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -14260,7 +14260,7 @@
 			},
 			// version
 			VERSION: {
-				value: '0.6.0'
+				value: '0.6.1'
 			},
 			// Plugins
 			adaptors: {
