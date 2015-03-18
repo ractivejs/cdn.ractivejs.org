@@ -1,6 +1,6 @@
 /*
-	Ractive.js v0.7.0-edge
-	Tue Mar 17 2015 22:41:56 GMT+0000 (UTC) - commit 9beef83f619243848b1c914444f38628c297d0c0
+	Ractive.js v0.7.1
+	Wed Mar 18 2015 02:57:43 GMT+0000 (UTC) - commit 26259224a607194e6e67986e2510cee3f606427b
 
 	http://ractivejs.org
 	http://twitter.com/RactiveJS
@@ -899,7 +899,7 @@
 
   if (hasConsole) {
   	(function () {
-  		var welcomeIntro = ["%cRactive.js %c0.7.0-edge %cin debug mode, %cmore...", "color: rgb(114, 157, 52); font-weight: normal;", "color: rgb(85, 85, 85); font-weight: normal;", "color: rgb(85, 85, 85); font-weight: normal;", "color: rgb(82, 140, 224); font-weight: normal; text-decoration: underline;"];
+  		var welcomeIntro = ["%cRactive.js %c0.7.1 %cin debug mode, %cmore...", "color: rgb(114, 157, 52); font-weight: normal;", "color: rgb(85, 85, 85); font-weight: normal;", "color: rgb(85, 85, 85); font-weight: normal;", "color: rgb(82, 140, 224); font-weight: normal; text-decoration: underline;"];
   		var welcomeMessage = "You're running Ractive <@version@> in debug mode - messages will be printed to the console to help you fix problems and optimise your application.\n\nTo disable debug mode, add this line at the start of your app:\n  Ractive.DEBUG = false;\n\nTo disable debug mode when your app is minified, add this snippet:\n  Ractive.DEBUG = /unminified/.test(function(){/*unminified*/});\n\nGet help and support:\n  http://docs.ractivejs.org\n  http://stackoverflow.com/questions/tagged/ractivejs\n  http://groups.google.com/forum/#!forum/ractive-js\n  http://twitter.com/ractivejs\n\nFound a bug? Raise an issue:\n  https://github.com/ractivejs/ractive/issues\n\n";
 
   		welcome = function () {
@@ -2972,7 +2972,6 @@
   }
 
   function notifySubscribers(ractive, subscribers, event, args) {
-
   	var originalEvent = null,
   	    stopEvent = false;
 
@@ -14873,7 +14872,7 @@
   	magic: { value: environment__magic },
 
   	// version
-  	VERSION: { value: "0.7.0-edge" },
+  	VERSION: { value: "0.7.1" },
 
   	// Plugins
   	adaptors: { writable: true, value: {} },
